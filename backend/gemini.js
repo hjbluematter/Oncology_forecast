@@ -330,30 +330,36 @@ Return JSON in this format:
 async function classifyIntent(message, activeTab) {
   const lower = message.toLowerCase();
 
-  const isEpi =
+  const isScenario =
+    lower.includes("scenario") ||
+    lower.includes("downside") || lower.includes("upside") ||
+    lower.includes("sensitivity") ||
+    lower.includes("% down") || lower.includes("% up") ||
+    lower.includes("reduced") || lower.includes("increase") ||
+    lower.includes("percent down") || lower.includes("percent up") ||
+    (lower.includes("run") && (lower.includes("forecast") || lower.includes("model") || lower.includes("scenario")));
+
+  // Only classify as epi search when there is no explicit scenario signal.
+  // e.g. "5% reduced testing rate" has "testing rate" (epi keyword) but also
+  // "reduced" (scenario keyword) — scenario wins.
+  const isEpi = !isScenario && (
     lower.includes("epi cut") ||
     lower.includes("epidemiology") ||
     (lower.includes("patient") && (lower.includes("pull") || lower.includes("find") || lower.includes("search") || lower.includes("fetch") || lower.includes("get"))) ||
     lower.includes("incidence") || lower.includes("prevalence") ||
     lower.includes("populate epi") || lower.includes("fill epi") ||
     lower.includes("biomarker") || lower.includes("funnel") ||
-    lower.includes("her2") || lower.includes("testing rate") || lower.includes("positivity");
+    lower.includes("her2") || lower.includes("testing rate") || lower.includes("positivity")
+  );
 
-  const isScenario =
-    lower.includes("scenario") ||
-    lower.includes("downside") || lower.includes("upside") ||
-    lower.includes("sensitivity") ||
-    lower.includes("% down") || lower.includes("% up") ||
-    lower.includes("percent down") || lower.includes("percent up") ||
-    (lower.includes("run") && (lower.includes("forecast") || lower.includes("model")));
-
-  if (isEpi) {
-    if (activeTab === "scenarios") return "blocked_epi";
-    return "epi_search";
-  }
+  // Scenario check first — it's more specific (user explicitly requested a scenario run)
   if (isScenario) {
     if (activeTab === "assumptions") return "blocked_scenario";
     return "scenario";
+  }
+  if (isEpi) {
+    if (activeTab === "scenarios") return "blocked_epi";
+    return "epi_search";
   }
   return "general";
 }
