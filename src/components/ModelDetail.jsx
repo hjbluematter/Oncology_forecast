@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useForecast } from "../store/forecastStore";
+import { useAuth } from "../store/authStore";
+import PermissionsPanel from "./permissions/PermissionsPanel";
 import EpiAssumptions from "./assumptions/EpiAssumptions";
 import FunnelCutAssumptions from "./assumptions/FunnelCutAssumptions";
 import MarketShareAssumptions from "./assumptions/MarketShareAssumptions";
@@ -14,9 +16,9 @@ import ScenarioManager from "./ScenarioManager";
 import AiChat from "./AiChat";
 import ResearchTab from "./ResearchTab";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
-const TABS = [
+const BASE_TABS = [
   { id: "assumptions", label: "Assumptions" },
   { id: "sharing", label: "Input Sharing" },
   { id: "forecast", label: "Forecast Output" },
@@ -25,7 +27,8 @@ const TABS = [
 ];
 
 export default function ModelDetail() {
-  const { activeModel, setView, updateModel } = useForecast();
+  const { activeModel, setView, updateModel, authHeaders } = useForecast();
+  const { isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState("assumptions");
   const [epiProposal, setEpiProposal] = useState(null);
   const [funnelProposal, setFunnelProposal] = useState(null);
@@ -33,7 +36,7 @@ export default function ModelDetail() {
   // Cloud save state
   const [cloudStatus, setCloudStatus] = useState(null); // null | "connected" | "error"
   const [cloudSaving, setCloudSaving] = useState(false);
-  const [cloudMsg, setCloudMsg] = useState(null);
+  const [cloudMsg, setCloudMsg] = useState(null); // { type: "success"|"error", text, at }
 
   // Check cloud connectivity once on mount
   useEffect(() => {
@@ -48,9 +51,9 @@ export default function ModelDetail() {
     setCloudMsg(null);
     try {
       const res = await fetch(`${API}/cloud/save/${activeModel.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: activeModel }),
+        method:  "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body:    JSON.stringify({ model: activeModel }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Save failed");
@@ -61,7 +64,7 @@ export default function ModelDetail() {
     } finally {
       setCloudSaving(false);
     }
-  }, [activeModel]);
+  }, [activeModel, authHeaders]);
 
   async function handleSourcesSaved(sessionData) {
     // sessionData may be a plain rows array (legacy) or a full session object {rows, derivation, population_by_year, ...}
@@ -78,6 +81,13 @@ export default function ModelDetail() {
   }
 
   if (!activeModel) return null;
+
+  // Access control — _access field is injected by the backend
+  const access       = activeModel._access ?? "WRITE";
+  const readOnly     = access === "READ";
+  const isModelAdmin = isAdmin || access === "ADMIN";
+
+  const TABS = [...BASE_TABS, ...(isModelAdmin ? [{ id: "permissions", label: "Permissions" }] : [])];
 
   const endYear = activeModel.startYear + activeModel.timelineYears - 1;
   const totalPeriods =
@@ -114,22 +124,39 @@ export default function ModelDetail() {
             }`}>
               {activeModel.status}
             </span>
+            {readOnly && (
+              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-700/60 text-slate-400 ring-1 ring-slate-600/40 font-medium">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                </svg>
+                Read-only view
+              </span>
+            )}
+
             {/* Cloud save */}
-            <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${
-                cloudStatus === "connected" ? "bg-emerald-400" :
-                cloudStatus === "error" ? "bg-red-400" : "bg-slate-600"
-              }`} title={cloudStatus ?? "checking…"} />
+            <div className="flex items-center gap-2 border-l border-slate-700 pl-3">
+              {/* Status dot */}
+              <span
+                title={cloudStatus === "connected" ? "MongoDB Atlas connected" : cloudStatus === "error" ? "Cloud not connected" : "Checking…"}
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  cloudStatus === "connected" ? "bg-emerald-400" :
+                  cloudStatus === "error"     ? "bg-red-500" :
+                                               "bg-slate-600 animate-pulse"
+                }`}
+              />
               <button
                 onClick={handleCloudSave}
-                disabled={cloudSaving || cloudStatus !== "connected"}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                disabled={cloudSaving}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-500"
               >
-                {cloudSaving
-                  ? <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
-                  : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5v-9m0 0l-3.75 3.75M12 7.5l3.75 3.75M3 15a4.5 4.5 0 004.5 4.5h9A4.5 4.5 0 0021 15" /></svg>
-                }
-                Save to Cloud
+                {cloudSaving ? (
+                  <div className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.338-2.32 3.75 3.75 0 013.357 5.094" />
+                  </svg>
+                )}
+                {cloudSaving ? "Saving…" : "Save to Cloud"}
               </button>
               {cloudMsg && (
                 <span className={`text-xs ${cloudMsg.type === "success" ? "text-emerald-400" : "text-red-400"}`}>
@@ -154,7 +181,7 @@ export default function ModelDetail() {
             { label: "Geographies", value: activeModel.geographies?.length ?? "—" },
           ].map(item => (
             <div key={item.label} className="shrink-0">
-              <p className="text-slate-600 text-xs">{item.label}</p>
+              <p className="text-slate-200 text-xs">{item.label}</p>
               <p className="text-slate-300 text-sm font-medium">{item.value}</p>
             </div>
           ))}
@@ -171,7 +198,7 @@ export default function ModelDetail() {
               className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === tab.id
                   ? "border-violet-500 text-violet-300"
-                  : "border-transparent text-slate-500 hover:text-slate-300"
+                  : "border-transparent text-slate-300 hover:text-slate-100"
               }`}
             >
               {tab.label}
@@ -184,21 +211,27 @@ export default function ModelDetail() {
         {activeTab === "assumptions" && (
           <AssumptionsTab
             model={activeModel}
+            readOnly={readOnly}
             epiProposal={epiProposal}
             onEpiProposalConsumed={() => setEpiProposal(null)}
             funnelProposal={funnelProposal}
             onFunnelProposalConsumed={() => setFunnelProposal(null)}
           />
         )}
-        {activeTab === "sharing" && <SharingTab model={activeModel} />}
-        {activeTab === "forecast" && <ForecastOutput model={activeModel} />}
-        {activeTab === "research" && (
+        {activeTab === "sharing"     && <SharingTab     model={activeModel} readOnly={readOnly} />}
+        {activeTab === "forecast"    && <ForecastOutput model={activeModel} />}
+        {activeTab === "research"    && (
           <ResearchTab
             model={activeModel}
             onModelUpdate={(patch) => updateModel(activeModel.id, patch)}
           />
         )}
-        {activeTab === "scenarios" && <ScenarioManager model={activeModel} />}
+        {activeTab === "scenarios"   && <ScenarioManager model={activeModel} />}
+        {activeTab === "permissions" && isModelAdmin && (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+            <PermissionsPanel model={activeModel} />
+          </div>
+        )}
       </main>
 
       {/* AI Chat — available on all tabs */}
@@ -227,17 +260,17 @@ export default function ModelDetail() {
 
 // ─── Sharing tab ──────────────────────────────────────────────────────────────
 
-function SharingTab({ model }) {
+function SharingTab({ model, readOnly }) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-      <InputSharingAssumptions model={model} />
+      <InputSharingAssumptions model={model} readOnly={readOnly} />
     </div>
   );
 }
 
 // ─── Assumptions tab ──────────────────────────────────────────────────────────
 
-function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelProposal, onFunnelProposalConsumed }) {
+function AssumptionsTab({ model, readOnly, epiProposal, onEpiProposalConsumed, funnelProposal, onFunnelProposalConsumed }) {
   const allCombos = buildCombos(model);
   const [filterState, setFilterState] = useState(null);
   const visibleKeys = filterState
@@ -261,6 +294,7 @@ function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelPropo
         <EpiAssumptions
           model={model}
           visibleKeys={visibleKeys}
+          readOnly={readOnly}
           proposal={epiProposal}
           onProposalConsumed={onEpiProposalConsumed}
         />
@@ -278,6 +312,7 @@ function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelPropo
         <FunnelCutAssumptions
           model={model}
           visibleKeys={visibleKeys}
+          readOnly={readOnly}
           funnelProposal={funnelProposal}
           onProposalConsumed={onFunnelProposalConsumed}
         />
@@ -292,7 +327,7 @@ function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelPropo
           </svg>
         }
       >
-        <MarketShareAssumptions model={model} visibleKeys={visibleKeys} />
+        <MarketShareAssumptions model={model} visibleKeys={visibleKeys} readOnly={readOnly} />
       </AssumptionSection>
 
       {(model.epiType ?? "Incidence") === "Incidence" && (
@@ -301,10 +336,11 @@ function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelPropo
           subtitle={`Median months on therapy · all products · ${model.linesOfTherapy ?? 1}L × ${model.segments ?? 1} segment${(model.segments??1)>1?"s":""}`}
           icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>}
         >
-          <PersistencyAssumptions model={model} visibleKeys={visibleKeys} />
+          <PersistencyAssumptions model={model} visibleKeys={visibleKeys} readOnly={readOnly} />
         </AssumptionSection>
       )}
 
+      {/* Progression Rates — Patient Flow models only */}
       {model.modelType === "Patient Flow" && (model.linesOfTherapy ?? 1) > 1 && (
         <AssumptionSection
           title="Progression Rates"
@@ -317,7 +353,7 @@ function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelPropo
             </svg>
           }
         >
-          <ProgressionAssumptions model={model} visibleKeys={visibleKeys} />
+          <ProgressionAssumptions model={model} visibleKeys={visibleKeys} readOnly={readOnly} />
         </AssumptionSection>
       )}
 
@@ -326,9 +362,10 @@ function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelPropo
         subtitle={`Compliance · Access · Abandonment · Vials · Price · GTN${model.applyIRA?" · IRA":""}${model.applyPTRS?" · PTRS":""} · key product only`}
         icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6a7.5 7.5 0 107.5 7.5h-7.5V6z"/><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 10.5H21A7.5 7.5 0 0013.5 3v7.5z"/></svg>}
       >
-        <OperationalAssumptions model={model} visibleKeys={visibleKeys} />
+        <OperationalAssumptions model={model} visibleKeys={visibleKeys} readOnly={readOnly} />
       </AssumptionSection>
 
+      {/* RoE / RoW derived geography scaling — shown for all models (component self-hides if not applicable) */}
       {(model.showRestOfEurope || model.showRestOfWorld) && (
         <AssumptionSection
           title="Rest of Europe & Rest of World Scaling"
@@ -339,7 +376,7 @@ function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelPropo
             </svg>
           }
         >
-          <RoeRowAssumptions model={model} />
+          <RoeRowAssumptions model={model} readOnly={readOnly} />
         </AssumptionSection>
       )}
     </div>
@@ -376,6 +413,22 @@ function AssumptionSection({ title, subtitle, icon, locked, defaultOpen, childre
         )}
       </button>
       {open && <div className="border-t border-slate-800">{children}</div>}
+    </div>
+  );
+}
+
+function PlaceholderTab({ label, description }) {
+  return (
+    <div className="bg-slate-900 border border-dashed border-slate-700 rounded-2xl flex flex-col items-center justify-center py-28 gap-4">
+      <div className="w-12 h-12 rounded-xl bg-violet-600/10 border border-violet-500/20 flex items-center justify-center text-violet-400">
+        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+        </svg>
+      </div>
+      <div className="text-center">
+        <p className="text-slate-300 font-semibold">{label}</p>
+        <p className="text-slate-200 text-sm mt-1 max-w-md">{description}</p>
+      </div>
     </div>
   );
 }

@@ -4,6 +4,9 @@ import {
 } from "recharts";
 import { runForecast } from "../utils/forecastEngine";
 
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
+
+
 const LOT_COLORS = ["#7c3aed", "#2563eb", "#0d9488", "#d97706", "#dc2626", "#7c3aed"];
 
 function fmtRevenue(v) {
@@ -60,6 +63,277 @@ function CustomTooltip({ active, payload, label, metric }) {
         <div className="mt-2 pt-2 border-t border-slate-700 flex justify-between">
           <span className="text-slate-400">Total</span>
           <span className="text-white tabular-nums">{fmtTip(total)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── AI Narrative ────────────────────────────────────────────────────────────
+
+function buildNarrativeSummary(model, results) {
+  const geos = model.geographies?.length > 0 ? model.geographies : ["Global"];
+  const lots = model.linesOfTherapy ?? 1;
+  const segs = model.segments ?? 1;
+  const lotLabels = Array.from({ length: lots }, (_, i) => `${i + 1}L`);
+  const years = results.years.map(String);
+
+  // Aggregate monthly results to yearly
+  function yearlySum(valMap) {
+    const out = {};
+    for (const y of years) {
+      const keys = results.periods.filter(p => p.startsWith(y + "-"));
+      out[y] = (keys.length ? keys : [y]).reduce((s, p) => s + (valMap?.[p] ?? 0), 0);
+    }
+    return out;
+  }
+
+  // Revenue by year (total)
+  const revenueByYear = {};
+  for (const y of years) {
+    const keys = results.periods.filter(p => p.startsWith(y + "-"));
+    revenueByYear[y] = (keys.length ? keys : [y]).reduce((s, p) => s + (results.totalRevenue?.[p] ?? 0), 0);
+  }
+
+  // NPS by year (total)
+  const npsByYear = {};
+  for (const y of years) {
+    const keys = results.periods.filter(p => p.startsWith(y + "-"));
+    let v = 0;
+    for (let g = 0; g < geos.length; g++)
+      for (let l = 0; l < lots; l++)
+        for (let s = 0; s < segs; s++)
+          v += (keys.length ? keys : [y]).reduce((s2, p) => s2 + (results.nps[`${g}-${l}-${s}-0`]?.[p] ?? 0), 0);
+    npsByYear[y] = Math.round(v);
+  }
+
+  const totalRev = Object.values(revenueByYear).reduce((s, v) => s + v, 0);
+  const totalNPS = Object.values(npsByYear).reduce((s, v) => s + v, 0);
+  const totalVials = Object.values(results.totalVials ?? {}).reduce((s, v) => s + v, 0);
+
+  const peakEntry = Object.entries(revenueByYear).reduce((a, b) => b[1] > a[1] ? b : a, ["", 0]);
+
+  // Revenue by LOT (total + by year)
+  const revenueByLot = {};
+  const revenueByLotByYear = {};
+  for (const ll of lotLabels) {
+    const byYear = {};
+    for (const y of years) {
+      const keys = results.periods.filter(p => p.startsWith(y + "-"));
+      byYear[y] = (keys.length ? keys : [y]).reduce((s, p) => s + (results.revenueByLot[ll]?.[p] ?? 0), 0);
+    }
+    revenueByLotByYear[ll] = Object.fromEntries(Object.entries(byYear).map(([k, v]) => [k, fmtRevenue(v)]));
+    revenueByLot[ll] = Object.values(byYear).reduce((s, v) => s + v, 0);
+  }
+
+  // Revenue by Geo (total + by year)
+  const revenueByGeo = {};
+  const revenueByGeoByYear = {};
+  for (let g = 0; g < geos.length; g++) {
+    const byYear = {};
+    for (const y of years) {
+      const keys = results.periods.filter(p => p.startsWith(y + "-"));
+      let v = 0;
+      for (let l = 0; l < lots; l++)
+        for (let s = 0; s < segs; s++)
+          v += (keys.length ? keys : [y]).reduce((s2, p) => s2 + (results.revenue[`${g}-${l}-${s}-0`]?.[p] ?? 0), 0);
+      byYear[y] = v;
+    }
+    revenueByGeo[geos[g]] = Object.values(byYear).reduce((s, v) => s + v, 0);
+    revenueByGeoByYear[geos[g]] = Object.fromEntries(Object.entries(byYear).map(([k, v]) => [k, fmtRevenue(v)]));
+  }
+
+  // Revenue by LOT × Geo matrix
+  const lotGeoMatrix = {};
+  for (const ll of lotLabels) {
+    lotGeoMatrix[ll] = {};
+    const li = parseInt(ll) - 1;
+    for (let g = 0; g < geos.length; g++) {
+      let v = 0;
+      for (let s = 0; s < segs; s++)
+        v += Object.values(results.revenue[`${g}-${li}-${s}-0`] ?? {}).reduce((a, b) => a + b, 0);
+      lotGeoMatrix[ll][geos[g]] = fmtRevenue(v);
+    }
+  }
+
+  // Sample operational assumptions from first combo first period
+  const firstKey = `0-0-0`;
+  const firstPeriod = results.periods[0];
+  const trace = results.traceData?.[firstKey]?.[firstPeriod];
+  const operationalSample = trace ? {
+    compliance_pct: trace.compliance,
+    access_pct: trace.access,
+    abandonment_pct: trace.abandonment,
+    vialsPerPatientMonth: trace.vialsPerPM,
+    grossPrice_per_vial: fmtPrice(trace.grossPrice),
+    gtn_pct: trace.gtn,
+    netPrice_per_vial: fmtPrice(trace.netPrice),
+    ptrs_pct: trace.ptrs,
+    iraAppliedInFirstPeriod: trace.iraApplied ?? false,
+  } : null;
+
+  // RoE / RoW totals
+  let roeTotal = null, rowTotal = null;
+  if (model.showRestOfEurope && results.roeByLot) {
+    let v = 0;
+    for (const ll of lotLabels)
+      v += Object.values(results.roeByLot[ll] ?? {}).reduce((s, e) => s + (e?.revenue ?? 0), 0);
+    roeTotal = fmtRevenue(v);
+  }
+  if (model.showRestOfWorld && results.rowByLot) {
+    let v = 0;
+    for (const ll of lotLabels)
+      v += Object.values(results.rowByLot[ll] ?? {}).reduce((s, e) => s + (e?.revenue ?? 0), 0);
+    rowTotal = fmtRevenue(v);
+  }
+
+  const topGeo = Object.entries(revenueByGeo).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const topLot = Object.entries(revenueByLot).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const topLotShare = totalRev > 0 ? Math.round(revenueByLot[topLot] / totalRev * 100) : 0;
+  const topGeoShare = totalRev > 0 ? Math.round(revenueByGeo[topGeo] / totalRev * 100) : 0;
+
+  return {
+    asset: model.assetName,
+    indication: model.indication,
+    modelType: model.modelType,
+    epiType: model.epiType,
+    granularity: model.granularity,
+    timeline: `${model.startYear} – ${model.startYear + model.timelineYears - 1}`,
+    geographies: geos,
+    linesOfTherapy: lots,
+    segments: segs,
+    segmentNames: model.segmentNames?.slice(0, segs) ?? [],
+    totalCumulativeRevenue: fmtRevenue(totalRev),
+    totalCumulativeRevenue_USD: Math.round(totalRev),
+    peakYear: peakEntry[0],
+    peakYearRevenue: fmtRevenue(peakEntry[1]),
+    totalNewPatients_allYears: Math.round(totalNPS),
+    totalVialsDispensed_allYears: Math.round(totalVials),
+    revenueByYear: Object.fromEntries(Object.entries(revenueByYear).map(([k, v]) => [k, fmtRevenue(v)])),
+    newPatientsByYear: npsByYear,
+    revenueByLot: Object.fromEntries(Object.entries(revenueByLot).map(([k, v]) => [k, fmtRevenue(v)])),
+    revenueByLotByYear,
+    revenueByGeo: Object.fromEntries(Object.entries(revenueByGeo).map(([k, v]) => [k, fmtRevenue(v)])),
+    revenueByGeoByYear,
+    lotGeoMatrix,
+    topGeography: topGeo,
+    topGeographyShareOfTotal: `${topGeoShare}%`,
+    topLineOfTherapy: topLot,
+    topLotShareOfTotal: `${topLotShare}%`,
+    roeAggregateRevenue: roeTotal,
+    rowAggregateRevenue: rowTotal,
+    operationalAssumptions_firstCombo: operationalSample,
+    iraApplied: model.applyIRA ? { fromYear: model.iraYear, discountRate: `${model.iraDiscountRate}%`, smallMolecule: model.iraSmallMolecule } : null,
+    ptrsApplied: model.applyPTRS ? { probability: `${model.ptrsValue}%`, impliedHaircut: `${100 - model.ptrsValue}%` } : null,
+  };
+}
+
+function NarrativeSection({ model, results }) {
+  const [narrative, setNarrative] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [expanded, setExpanded] = useState(true);
+
+  async function generate() {
+    setLoading(true);
+    setError(null);
+    try {
+      const summary = buildNarrativeSummary(model, results);
+      const res = await fetch(`${API}/narrative`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ summary }),
+      });
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); }
+      catch { throw new Error(`Backend returned unexpected response — is the backend restarted? (${res.status})`); }
+      if (!res.ok) throw new Error(data.error ?? "Request failed");
+      setNarrative(data.narrative);
+      setExpanded(true);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+      <div
+        className="px-5 py-4 flex items-center gap-3 cursor-pointer hover:bg-slate-800/30 transition-colors"
+        onClick={() => narrative && setExpanded(e => !e)}
+      >
+        <div className="w-8 h-8 rounded-lg bg-violet-600/15 border border-violet-500/20 flex items-center justify-center text-violet-600 shrink-0">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+          </svg>
+        </div>
+        <div className="flex-1">
+          <p className="text-slate-200 text-sm font-medium">AI Forecast Narrative</p>
+          <p className="text-slate-500 text-xs mt-0.5">
+            {narrative && !expanded ? "Click to expand" : "Executive summary generated from your forecast results"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {narrative && (
+            <button
+              onClick={e => { e.stopPropagation(); setExpanded(v => !v); }}
+              className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+            >
+              <svg className={`w-3.5 h-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+              </svg>
+              {expanded ? "Collapse" : "Expand"}
+            </button>
+          )}
+          <button
+            onClick={e => { e.stopPropagation(); generate(); }}
+            disabled={loading}
+            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors"
+          >
+            {loading ? (
+              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+              </svg>
+            )}
+            {loading ? "Generating…" : narrative ? "Regenerate" : "Generate Summary"}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="px-5 py-4 text-red-500 text-xs bg-red-50 border-b border-red-100">
+          {error}
+        </div>
+      )}
+
+      {narrative && !loading && expanded && (
+        <div className="px-5 py-5 border-t border-slate-800">
+          <div className="prose prose-sm max-w-none">
+            {narrative.split("\n\n").filter(p => p.trim()).map((para, i) => (
+              <p key={i} className="text-slate-200 text-sm leading-relaxed mb-3 last:mb-0">
+                {para.trim()}
+              </p>
+            ))}
+          </div>
+          <button
+            onClick={() => setExpanded(false)}
+            className="mt-4 flex items-center gap-1.5 text-slate-400 hover:text-slate-200 text-xs font-medium transition-colors"
+          >
+            <svg className="w-3.5 h-3.5 rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
+            Collapse summary
+          </button>
+        </div>
+      )}
+
+      {!narrative && !loading && !error && (
+        <div className="px-5 py-8 text-center">
+          <p className="text-slate-500 text-sm">Click "Generate Summary" to get an AI-written executive narrative of these results.</p>
         </div>
       )}
     </div>
@@ -375,78 +649,188 @@ function ComboDetailSection({ model, results }) {
   );
 }
 
-// ─── Detailed Results — periods as columns, rows = LOT × Geo ─────────────────
+// ─── Detailed Results — periods as columns ───────────────────────────────────
 
 function DetailedResultsTables({ model, results }) {
   const geos = model.geographies?.length > 0 ? model.geographies : ["Global"];
   const lots = model.linesOfTherapy ?? 1;
   const segs = model.segments ?? 1;
   const lotLabels = Array.from({ length: lots }, (_, i) => `${i + 1}L`);
+  const segLabels = Array.from({ length: segs }, (_, i) => model.segmentNames?.[i] || `Seg ${i + 1}`);
   const isMonthlyModel = model.granularity === "Monthly";
 
-  // Controls
   const [metric, setMetric] = useState("revenue");
   const [granularity, setGranularity] = useState("yearly");
+  const [viewBy, setViewBy] = useState("lot"); // "lot" | "geo" | "segment"
 
   const showRoE = model.showRestOfEurope && Object.keys(results.roeByLot ?? {}).length > 0;
   const showRoW = model.showRestOfWorld && Object.keys(results.rowByLot ?? {}).length > 0;
 
-  // Display periods — yearly or monthly
   const displayPeriods = (!isMonthlyModel || granularity === "yearly")
     ? results.years.map(String)
     : results.periods;
 
-  // Aggregate over months if showing yearly in a monthly model
+  // Aggregate months to year when needed
   function agg(keyFn, dp) {
     if (!isMonthlyModel || granularity === "monthly") return keyFn(dp) ?? 0;
-    const keys = results.periods.filter(p => p.startsWith(dp + "-"));
-    return keys.reduce((s, p) => s + (keyFn(p) ?? 0), 0);
+    return results.periods.filter(p => p.startsWith(dp + "-")).reduce((s, p) => s + (keyFn(p) ?? 0), 0);
   }
 
-  // Get value for a geo × lot combination
+  function getMetricVal(gIdx, lotIdx, segIdx, dp) {
+    const k = `${gIdx}-${lotIdx}-${segIdx}-0`;
+    if (metric === "revenue") return agg(p => results.revenue[k]?.[p] ?? 0, dp);
+    if (metric === "nps")     return agg(p => results.nps[k]?.[p]     ?? 0, dp);
+    return                           agg(p => results.vials[k]?.[p]   ?? 0, dp);
+  }
+
+  // Sum across all segments for a geo×lot
   function geoLotVal(gIdx, lotIdx, dp) {
-    if (metric === "revenue") {
-      return agg(p => { let v = 0; for (let s = 0; s < segs; s++) v += results.revenue[`${gIdx}-${lotIdx}-${s}-0`]?.[p] ?? 0; return v; }, dp);
-    }
-    if (metric === "nps") {
-      return agg(p => { let v = 0; for (let s = 0; s < segs; s++) v += results.nps[`${gIdx}-${lotIdx}-${s}-0`]?.[p] ?? 0; return v; }, dp);
-    }
-    // vials
-    return agg(p => { let v = 0; for (let s = 0; s < segs; s++) v += results.vials[`${gIdx}-${lotIdx}-${s}-0`]?.[p] ?? 0; return v; }, dp);
+    let v = 0;
+    for (let s = 0; s < segs; s++) v += getMetricVal(gIdx, lotIdx, s, dp);
+    return v;
+  }
+
+  // Sum across all geos (and segs) for a lot
+  function lotVal(lotIdx, dp) {
+    let v = 0;
+    for (let g = 0; g < geos.length; g++) v += geoLotVal(g, lotIdx, dp);
+    if (showRoE) v += derivedVal(results.roeByLot, lotLabels[lotIdx], dp);
+    if (showRoW) v += derivedVal(results.rowByLot, lotLabels[lotIdx], dp);
+    return v;
+  }
+
+  // Sum across all lots (and segs) for a geo
+  function geoVal(gIdx, dp) {
+    let v = 0;
+    for (let l = 0; l < lots; l++) v += geoLotVal(gIdx, l, dp);
+    return v;
+  }
+
+  // Sum across all geos and lots for a segment
+  function segVal(segIdx, dp) {
+    let v = 0;
+    for (let g = 0; g < geos.length; g++)
+      for (let l = 0; l < lots; l++)
+        v += getMetricVal(g, l, segIdx, dp);
+    return v;
+  }
+
+  // Sum lot values for a specific segment
+  function segLotVal(segIdx, lotIdx, dp) {
+    let v = 0;
+    for (let g = 0; g < geos.length; g++) v += getMetricVal(g, lotIdx, segIdx, dp);
+    return v;
   }
 
   function derivedVal(byLot, lotLabel, dp) {
     if (metric === "revenue") return agg(p => byLot[lotLabel]?.[p]?.revenue ?? 0, dp);
     if (metric === "nps")     return agg(p => byLot[lotLabel]?.[p]?.nps     ?? 0, dp);
-    return 0; // vials not available for derived geos
+    return 0;
   }
 
   function fmt(v) {
     return metric === "revenue" ? fmtRevenue(v) : fmtInt(v);
   }
 
-  // Build row definitions
-  const rowDefs = [];
-  for (let li = 0; li < lots; li++) {
-    const lotLabel = lotLabels[li];
-    // section divider
-    rowDefs.push({ type: "lot", lotLabel, lotIdx: li });
-    // regular geos
-    for (let gi = 0; gi < geos.length; gi++) {
-      rowDefs.push({ type: "geo", geoLabel: geos[gi], geoIdx: gi, lotIdx: li, lotLabel });
-    }
-    // derived geos
-    if (showRoE) rowDefs.push({ type: "roe", lotLabel, lotIdx: li });
-    if (showRoW) rowDefs.push({ type: "row", lotLabel, lotIdx: li });
-    // lot subtotal
-    rowDefs.push({ type: "lot-total", lotLabel, lotIdx: li });
-  }
-  // grand total
-  rowDefs.push({ type: "grand-total" });
+  // ── Build row definitions per view ───────────────────────────────────────────
+  const rowDefs = useMemo(() => {
+    const rows = [];
 
-  // Column width
+    if (viewBy === "lot") {
+      for (let li = 0; li < lots; li++) {
+        rows.push({ type: "section", label: lotLabels[li], lotIdx: li });
+        for (let gi = 0; gi < geos.length; gi++)
+          rows.push({ type: "data", label: geos[gi], geoIdx: gi, lotIdx: li });
+        if (showRoE) rows.push({ type: "roe-data", label: "RoE", lotIdx: li, lotLabel: lotLabels[li] });
+        if (showRoW) rows.push({ type: "row-data", label: "RoW", lotIdx: li, lotLabel: lotLabels[li] });
+        rows.push({ type: "subtotal", label: `${lotLabels[li]} Total`, lotIdx: li });
+      }
+    } else if (viewBy === "geo") {
+      for (let gi = 0; gi < geos.length; gi++) {
+        rows.push({ type: "section", label: geos[gi], geoIdx: gi });
+        for (let li = 0; li < lots; li++)
+          rows.push({ type: "data", label: lotLabels[li], geoIdx: gi, lotIdx: li });
+        rows.push({ type: "subtotal", label: `${geos[gi]} Total`, geoIdx: gi });
+      }
+      if (showRoE) {
+        rows.push({ type: "section", label: "RoE" });
+        for (let li = 0; li < lots; li++)
+          rows.push({ type: "roe-data", label: lotLabels[li], lotIdx: li, lotLabel: lotLabels[li] });
+        rows.push({ type: "roe-subtotal", label: "RoE Total" });
+      }
+      if (showRoW) {
+        rows.push({ type: "section", label: "RoW" });
+        for (let li = 0; li < lots; li++)
+          rows.push({ type: "row-data", label: lotLabels[li], lotIdx: li, lotLabel: lotLabels[li] });
+        rows.push({ type: "row-subtotal", label: "RoW Total" });
+      }
+    } else {
+      // by segment
+      for (let si = 0; si < segs; si++) {
+        rows.push({ type: "section", label: segLabels[si], segIdx: si });
+        for (let li = 0; li < lots; li++)
+          rows.push({ type: "data", label: lotLabels[li], segIdx: si, lotIdx: li });
+        rows.push({ type: "subtotal", label: `${segLabels[si]} Total`, segIdx: si });
+      }
+    }
+
+    rows.push({ type: "grand-total" });
+    return rows;
+  }, [viewBy, lots, geos.length, segs, showRoE, showRoW]);
+
   const COL_W = granularity === "monthly" ? 80 : 96;
-  const LABEL_W = 190;
+  const LABEL_W = 200;
+
+  // Resolve value for a data row
+  function rowVals(row, dp) {
+    if (viewBy === "lot") {
+      if (row.type === "data")     return geoLotVal(row.geoIdx, row.lotIdx, dp);
+      if (row.type === "roe-data") return derivedVal(results.roeByLot, row.lotLabel, dp);
+      if (row.type === "row-data") return derivedVal(results.rowByLot, row.lotLabel, dp);
+    }
+    if (viewBy === "geo") {
+      if (row.type === "data")     return geoLotVal(row.geoIdx, row.lotIdx, dp);
+      if (row.type === "roe-data") return derivedVal(results.roeByLot, row.lotLabel, dp);
+      if (row.type === "row-data") return derivedVal(results.rowByLot, row.lotLabel, dp);
+    }
+    if (viewBy === "segment") {
+      if (row.type === "data") return segLotVal(row.segIdx, row.lotIdx, dp);
+    }
+    return 0;
+  }
+
+  function subtotalVals(row, dp) {
+    if (viewBy === "lot") {
+      return lotVal(row.lotIdx, dp);
+    }
+    if (viewBy === "geo") {
+      if (row.type === "subtotal")     return geoVal(row.geoIdx, dp);
+      if (row.type === "roe-subtotal") {
+        let v = 0;
+        for (let li = 0; li < lots; li++) v += derivedVal(results.roeByLot, lotLabels[li], dp);
+        return v;
+      }
+      if (row.type === "row-subtotal") {
+        let v = 0;
+        for (let li = 0; li < lots; li++) v += derivedVal(results.rowByLot, lotLabels[li], dp);
+        return v;
+      }
+    }
+    if (viewBy === "segment") {
+      return segVal(row.segIdx, dp);
+    }
+    return 0;
+  }
+
+  function grandTotalVals(dp) {
+    let v = 0;
+    for (let li = 0; li < lots; li++) v += lotVal(li, dp);
+    return v;
+  }
+
+  const viewLabel = viewBy === "lot" ? "Line of Therapy → Geography"
+    : viewBy === "geo" ? "Geography → Line of Therapy"
+    : "Segment → Line of Therapy";
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
@@ -454,9 +838,22 @@ function DetailedResultsTables({ model, results }) {
       <div className="px-5 py-3 border-b border-slate-800 flex flex-wrap items-center gap-4">
         <div>
           <p className="text-slate-200 text-sm font-medium">Detailed Results</p>
-          <p className="text-slate-500 text-xs mt-0.5">Geography × Line of Therapy · asset only</p>
+          <p className="text-slate-500 text-xs mt-0.5">{viewLabel} · asset only</p>
         </div>
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          {/* View By toggle */}
+          <div className="flex items-center bg-slate-800 rounded-lg p-0.5 gap-0.5">
+            {[
+              { id: "lot",     label: "By LOT" },
+              { id: "geo",     label: "By Geography" },
+              ...(segs > 1 ? [{ id: "segment", label: "By Segment" }] : []),
+            ].map(v => (
+              <button key={v.id} onClick={() => setViewBy(v.id)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${viewBy === v.id ? "bg-violet-600 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
+              >{v.label}</button>
+            ))}
+          </div>
+
           {/* Metric toggle */}
           <div className="flex items-center bg-slate-800 rounded-lg p-0.5 gap-0.5">
             {[
@@ -464,44 +861,32 @@ function DetailedResultsTables({ model, results }) {
               { id: "nps",     label: "New Patients" },
               { id: "vials",   label: "Vials" },
             ].map(m => (
-              <button
-                key={m.id}
-                onClick={() => setMetric(m.id)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  metric === m.id ? "bg-violet-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                {m.label}
-              </button>
+              <button key={m.id} onClick={() => setMetric(m.id)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${metric === m.id ? "bg-violet-600 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
+              >{m.label}</button>
             ))}
           </div>
 
-          {/* Granularity toggle — only for monthly models */}
+          {/* Granularity toggle — monthly models only */}
           {isMonthlyModel && (
             <div className="flex items-center bg-slate-800 rounded-lg p-0.5 gap-0.5">
               {[{ id: "yearly", label: "Yearly" }, { id: "monthly", label: "Monthly" }].map(g => (
-                <button
-                  key={g.id}
-                  onClick={() => setGranularity(g.id)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                    granularity === g.id ? "bg-violet-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  {g.label}
-                </button>
+                <button key={g.id} onClick={() => setGranularity(g.id)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${granularity === g.id ? "bg-violet-600 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
+                >{g.label}</button>
               ))}
             </div>
           )}
         </div>
       </div>
 
-      {/* Table — periods as columns */}
+      {/* Table */}
       <div className="overflow-auto" style={{ maxHeight: 560 }}>
         <table className="border-collapse text-xs" style={{ minWidth: LABEL_W + displayPeriods.length * COL_W + COL_W }}>
           <thead className="sticky top-0 z-10">
             <tr className="bg-[#dbe8f8] border-b border-[#b3cce8]">
               <th className="sticky left-0 text-left px-4 py-2.5 font-semibold border-r border-[#b3cce8] whitespace-nowrap bg-[#dbe8f8] text-slate-100" style={{ minWidth: LABEL_W }}>
-                Geography / Line
+                {viewBy === "lot" ? "Geography" : viewBy === "geo" ? "Line of Therapy" : "Line of Therapy"}
               </th>
               {displayPeriods.map(dp => (
                 <th key={dp} className="text-right px-3 py-2.5 font-medium whitespace-nowrap text-slate-200" style={{ minWidth: COL_W }}>
@@ -515,55 +900,38 @@ function DetailedResultsTables({ model, results }) {
           </thead>
           <tbody>
             {rowDefs.map((row, ri) => {
-              // ── LOT section header ──────────────────────────────────────────
-              if (row.type === "lot") {
+
+              // ── Section header ──────────────────────────────────────────────
+              if (row.type === "section") {
                 return (
-                  <tr key={`lot-${row.lotLabel}`} className="border-t border-[#bfdbfe]">
+                  <tr key={`sec-${ri}`} className="border-t border-[#bfdbfe]">
                     <td colSpan={displayPeriods.length + 2} className="px-4 py-1.5 bg-[#eff6ff]">
-                      <span className="text-violet-600 font-bold text-xs tracking-wide">{row.lotLabel}</span>
+                      <span className="text-violet-600 font-bold text-xs tracking-wide">{row.label}</span>
                     </td>
                   </tr>
                 );
               }
 
-              // ── LOT subtotal row ────────────────────────────────────────────
-              if (row.type === "lot-total") {
-                const vals = displayPeriods.map(dp => {
-                  let v = 0;
-                  for (let gi = 0; gi < geos.length; gi++) v += geoLotVal(gi, row.lotIdx, dp);
-                  if (showRoE) v += derivedVal(results.roeByLot, row.lotLabel, dp);
-                  if (showRoW) v += derivedVal(results.rowByLot, row.lotLabel, dp);
-                  return v;
-                });
+              // ── Subtotal row ────────────────────────────────────────────────
+              if (["subtotal", "roe-subtotal", "row-subtotal"].includes(row.type)) {
+                const vals = displayPeriods.map(dp => subtotalVals(row, dp));
                 const total = vals.reduce((s, v) => s + v, 0);
                 return (
-                  <tr key={`lot-total-${row.lotLabel}`} className="border-t border-[#bfdbfe] border-b-2 border-b-[#bfdbfe]">
+                  <tr key={`sub-${ri}`} className="border-t border-[#bfdbfe] border-b-2 border-b-[#bfdbfe]">
                     <td className="sticky left-0 px-4 py-2 font-semibold border-r border-[#bfdbfe] bg-[#dbeafe] text-violet-700 whitespace-nowrap pl-4">
-                      {row.lotLabel} Total
+                      {row.label}
                     </td>
                     {vals.map((v, i) => (
-                      <td key={i} className="text-right px-3 py-2 tabular-nums font-semibold bg-[#dbeafe] text-violet-700">
-                        {fmt(v)}
-                      </td>
+                      <td key={i} className="text-right px-3 py-2 tabular-nums font-semibold bg-[#dbeafe] text-violet-700">{fmt(v)}</td>
                     ))}
-                    <td className="text-right px-3 py-2 tabular-nums font-semibold bg-[#dbeafe] text-violet-700 border-l border-[#bfdbfe]">
-                      {fmt(total)}
-                    </td>
+                    <td className="text-right px-3 py-2 tabular-nums font-semibold bg-[#dbeafe] text-violet-700 border-l border-[#bfdbfe]">{fmt(total)}</td>
                   </tr>
                 );
               }
 
-              // ── Grand total row ─────────────────────────────────────────────
+              // ── Grand total ─────────────────────────────────────────────────
               if (row.type === "grand-total") {
-                const vals = displayPeriods.map(dp => {
-                  let v = 0;
-                  for (let li = 0; li < lots; li++) {
-                    for (let gi = 0; gi < geos.length; gi++) v += geoLotVal(gi, li, dp);
-                    if (showRoE) v += derivedVal(results.roeByLot, lotLabels[li], dp);
-                    if (showRoW) v += derivedVal(results.rowByLot, lotLabels[li], dp);
-                  }
-                  return v;
-                });
+                const vals = displayPeriods.map(dp => grandTotalVals(dp));
                 const total = vals.reduce((s, v) => s + v, 0);
                 return (
                   <tr key="grand-total" className="border-t-2 border-[#a5b4fc]">
@@ -571,48 +939,29 @@ function DetailedResultsTables({ model, results }) {
                       Grand Total
                     </td>
                     {vals.map((v, i) => (
-                      <td key={i} className="text-right px-3 py-2.5 tabular-nums font-bold bg-[#ede9fe] text-violet-800">
-                        {fmt(v)}
-                      </td>
+                      <td key={i} className="text-right px-3 py-2.5 tabular-nums font-bold bg-[#ede9fe] text-violet-800">{fmt(v)}</td>
                     ))}
-                    <td className="text-right px-3 py-2.5 tabular-nums font-bold bg-[#ede9fe] text-violet-800 border-l border-[#c4b5fd]">
-                      {fmt(total)}
-                    </td>
+                    <td className="text-right px-3 py-2.5 tabular-nums font-bold bg-[#ede9fe] text-violet-800 border-l border-[#c4b5fd]">{fmt(total)}</td>
                   </tr>
                 );
               }
 
-              // ── Regular geo or derived geo data row ─────────────────────────
+              // ── Data row ────────────────────────────────────────────────────
               const isEven = ri % 2 === 0;
               const bg       = isEven ? "#ffffff" : "#f0f6ff";
               const stickyBg = isEven ? "#ffffff" : "#e8f0fd";
-
-              let label = "";
-              if (row.type === "geo")  label = row.geoLabel;
-              if (row.type === "roe")  label = "RoE";
-              if (row.type === "row")  label = "RoW";
-
-              const vals = displayPeriods.map(dp => {
-                if (row.type === "geo") return geoLotVal(row.geoIdx, row.lotIdx, dp);
-                if (row.type === "roe") return derivedVal(results.roeByLot, row.lotLabel, dp);
-                if (row.type === "row") return derivedVal(results.rowByLot, row.lotLabel, dp);
-                return 0;
-              });
+              const vals = displayPeriods.map(dp => rowVals(row, dp));
               const rowTotal = vals.reduce((s, v) => s + v, 0);
 
               return (
-                <tr key={`${row.type}-${row.lotLabel}-${label}`} style={{ background: bg }} className="border-b border-[#d1e0f5]">
+                <tr key={`data-${ri}`} style={{ background: bg }} className="border-b border-[#d1e0f5]">
                   <td className="sticky left-0 px-4 py-2 text-slate-200 font-medium whitespace-nowrap border-r border-[#d1e0f5] pl-8" style={{ background: stickyBg }}>
-                    {label}
+                    {row.label}
                   </td>
                   {vals.map((v, i) => (
-                    <td key={i} className="text-right px-3 py-2 tabular-nums text-slate-100">
-                      {fmt(v)}
-                    </td>
+                    <td key={i} className="text-right px-3 py-2 tabular-nums text-slate-100">{fmt(v)}</td>
                   ))}
-                  <td className="text-right px-3 py-2 tabular-nums text-slate-200 font-medium border-l border-[#d1e0f5]">
-                    {fmt(rowTotal)}
-                  </td>
+                  <td className="text-right px-3 py-2 tabular-nums text-slate-200 font-medium border-l border-[#d1e0f5]">{fmt(rowTotal)}</td>
                 </tr>
               );
             })}
@@ -766,6 +1115,9 @@ export default function ForecastOutput({ model }) {
               sub="all asset combos"
             />
           </div>
+
+          {/* AI Narrative */}
+          <NarrativeSection model={model} results={results} />
 
           {/* Chart */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">

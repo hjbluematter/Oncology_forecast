@@ -416,6 +416,7 @@ export function runForecast(model) {
   const eu5GeoIdx = geos.findIndex(g => g.toLowerCase() === "eu5");
   const usGeoIdx  = geos.findIndex(g => g.toLowerCase() === "us");
 
+  // roeByLot / rowByLot: { [lotLabel]: { [period]: { nps, revenue } } }
   const roeByLot = {};
   const rowByLot = {};
 

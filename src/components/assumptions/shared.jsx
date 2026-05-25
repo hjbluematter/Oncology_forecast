@@ -510,6 +510,7 @@ export function DirectEntryPanel({
   onSave,
   sharingGroups,      // optional: { [comboKey]: groupId } — dependents are read-only
   visibleKeys,        // optional Set<comboKey> — if provided, only show those combos
+  readOnly = false,   // when true, hides save/upload/download controls
 }) {
   const modelLevel   = (model.granularity ?? "Yearly").toLowerCase();
   const isMonthlyModel = modelLevel === "monthly";
@@ -710,28 +711,37 @@ export function DirectEntryPanel({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2 ml-auto">
-          <button onClick={downloadExcel} className="flex items-center gap-1.5 text-slate-400 hover:text-emerald-300 border border-slate-700 hover:border-emerald-600/50 px-3 py-1.5 rounded-lg text-xs font-medium transition-all">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
-            Download Excel
-          </button>
-          <button onClick={() => { setUploadMsg(null); fileInputRef.current?.click(); }} className="flex items-center gap-1.5 text-slate-400 hover:text-violet-300 border border-slate-700 hover:border-violet-600/50 px-3 py-1.5 rounded-lg text-xs font-medium transition-all">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
-            Upload Excel
-          </button>
-          <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if(f) handleUpload(f); e.target.value=""; }}
-          />
-          {uploadMsg && <span className={`text-xs ${uploadMsg.type==="success"?"text-emerald-400":"text-red-400"}`}>{uploadMsg.text}</span>}
-          {saveError && <span className="text-xs text-red-400">{saveError}</span>}
-          <span className="text-xs">{dirty?<span className="text-amber-500">Unsaved</span>:savedAt?<span className="text-slate-400">Saved {savedAt}</span>:null}</span>
-          <button onClick={handleSave} disabled={saving||!dirty}
-            className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-          >
-            {saving?<div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>:<svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>}
-            {saving?"Saving…":"Save"}
-          </button>
-        </div>
+        {!readOnly ? (
+          <div className="flex items-center gap-2 ml-auto">
+            <button onClick={downloadExcel} className="flex items-center gap-1.5 text-slate-400 hover:text-emerald-300 border border-slate-700 hover:border-emerald-600/50 px-3 py-1.5 rounded-lg text-xs font-medium transition-all">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+              Download Excel
+            </button>
+            <button onClick={() => { setUploadMsg(null); fileInputRef.current?.click(); }} className="flex items-center gap-1.5 text-slate-400 hover:text-violet-300 border border-slate-700 hover:border-violet-600/50 px-3 py-1.5 rounded-lg text-xs font-medium transition-all">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+              Upload Excel
+            </button>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if(f) handleUpload(f); e.target.value=""; }}
+            />
+            {uploadMsg && <span className={`text-xs ${uploadMsg.type==="success"?"text-emerald-400":"text-red-400"}`}>{uploadMsg.text}</span>}
+            {saveError && <span className="text-xs text-red-400">{saveError}</span>}
+            <span className="text-xs">{dirty?<span className="text-amber-500">Unsaved</span>:savedAt?<span className="text-slate-400">Saved {savedAt}</span>:null}</span>
+            <button onClick={handleSave} disabled={saving||!dirty}
+              className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            >
+              {saving?<div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>:<svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>}
+              {saving?"Saving…":"Save"}
+            </button>
+          </div>
+        ) : (
+          <div className="ml-auto flex items-center gap-1.5 text-xs text-slate-600">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+            </svg>
+            Read-only
+          </div>
+        )}
       </div>
 
       {/* Geography tabs — shown only when no external filter is active */}

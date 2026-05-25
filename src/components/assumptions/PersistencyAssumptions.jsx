@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useForecast } from "../../store/forecastStore";
 import { buildCombos, strip, getSharingForAssumption } from "./shared";
+import { apiFetch } from "../../utils/apiFetch";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
-export default function PersistencyAssumptions({ model, visibleKeys }) {
+export default function PersistencyAssumptions({ model, visibleKeys, readOnly = false }) {
   const { updateModel } = useForecast();
   const combos = buildCombos(model);
   const saved  = model.persistencyAssumptions ?? {};
@@ -40,7 +41,7 @@ export default function PersistencyAssumptions({ model, visibleKeys }) {
       finalValues[depKey] = finalValues[info.primaryKey] ?? "";
     }
     const persistencyAssumptions = { combos: finalValues };
-    await fetch(`${API}/models/${model.id}`, {
+    await apiFetch(`${API}/models/${model.id}`, {
       method: "PATCH", headers: { "Content-Type":"application/json" },
       body: JSON.stringify({ persistencyAssumptions }),
     });

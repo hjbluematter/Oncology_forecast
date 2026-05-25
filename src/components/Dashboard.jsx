@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useForecast } from "../store/forecastStore";
+import { useAuth } from "../store/authStore";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 const STATUS_COLORS = {
   Active: "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30",
@@ -22,8 +23,17 @@ const MODEL_TYPE_ICON = {
   ),
 };
 
+const ACCESS_COLOR = {
+  READ:  "bg-slate-700/60 text-slate-400",
+  WRITE: "bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20",
+  ADMIN: "bg-violet-500/10 text-violet-400 ring-1 ring-violet-500/20",
+};
+const ACCESS_LABEL = { READ: "Read Access", WRITE: "Edit Access", ADMIN: "Admin" };
+
 export default function Dashboard() {
   const { models, loading, error, openModel, openEditModel, deleteModel, setView } = useForecast();
+  const { user, isAdmin, logout } = useAuth();
+  const canCreate = isAdmin;
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [cloudStatus, setCloudStatus] = useState(null);
   const [migrating, setMigrating] = useState(false);
@@ -91,6 +101,44 @@ export default function Dashboard() {
             <span className="text-blue-300 text-sm opacity-80">Portfolio Forecasting</span>
           </div>
           <div className="flex items-center gap-3">
+            {/* User chip */}
+            {user && (
+              <div className="flex items-center gap-2 bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5">
+                <div className="w-5 h-5 rounded-full bg-violet-600/30 flex items-center justify-center text-violet-400 text-xs font-semibold">
+                  {user.name?.[0]?.toUpperCase() ?? "?"}
+                </div>
+                <span className="text-slate-300 text-xs font-medium">{user.name}</span>
+                {isAdmin && (
+                  <span className="bg-violet-500/15 text-violet-400 ring-1 ring-violet-500/30 text-[10px] px-1.5 py-0.5 rounded-full font-medium">Admin</span>
+                )}
+              </div>
+            )}
+
+            {/* Manage Access — admin only */}
+            {isAdmin && (
+              <button
+                onClick={() => setView("user-management")}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-all bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                </svg>
+                Manage Access
+              </button>
+            )}
+
+            {/* Logout */}
+            <button
+              onClick={logout}
+              title="Sign out"
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-all bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+              </svg>
+              Logout
+            </button>
+
             {/* Cloud status + migrate */}
             <div className="flex items-center gap-2">
               <span
@@ -144,14 +192,27 @@ export default function Dashboard() {
             </div>
 
             <button
-              onClick={() => setView("new-model")}
-              className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              onClick={() => setView("portfolio-select")}
+              disabled={models.length === 0}
+              title={models.length === 0 ? "Create at least one forecast model first" : "Aggregate and compare all forecast models"}
+              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-200 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-slate-700"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6" />
               </svg>
-              New Forecast Model
+              Portfolio Aggregation
             </button>
+            {canCreate && (
+              <button
+                onClick={() => setView("new-model")}
+                className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                New Forecast Model
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -171,7 +232,7 @@ export default function Dashboard() {
         {/* Page header */}
         <div className="mb-8">
           <h1 className="text-2xl font-semibold text-slate-100">Forecast Models</h1>
-          <p className="text-slate-400 mt-1 text-sm">
+          <p className="text-slate-200 mt-1 text-sm">
             {loading ? "Loading…" : `${models.length} model${models.length !== 1 ? "s" : ""} across your oncology pipeline portfolio`}
           </p>
         </div>
@@ -185,9 +246,9 @@ export default function Dashboard() {
             { label: "Lines of Therapy", value: loading || !models.length ? "—" : Math.max(...models.map(m => m.linesOfTherapy)), sub: "max across portfolio" },
           ].map(stat => (
             <div key={stat.label} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-              <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">{stat.label}</p>
+              <p className="text-slate-200 text-xs uppercase tracking-wider mb-1">{stat.label}</p>
               <p className="text-slate-100 text-2xl font-semibold">{stat.value}</p>
-              <p className="text-slate-500 text-xs mt-1">{stat.sub}</p>
+              <p className="text-slate-300 text-xs mt-1">{stat.sub}</p>
             </div>
           ))}
         </div>
@@ -278,6 +339,7 @@ export default function Dashboard() {
 
 function ModelCard({ model, onClick, onEdit, onDelete }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const access = model._access ?? "WRITE";
 
   return (
     <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 hover:border-violet-500/50 transition-all group">
@@ -291,7 +353,7 @@ function ModelCard({ model, onClick, onEdit, onDelete }) {
             <h3 className="text-slate-100 font-semibold text-sm group-hover:text-violet-300 transition-colors truncate">
               {model.assetName}
             </h3>
-            <p className="text-slate-500 text-xs mt-0.5 truncate">{model.indication}</p>
+            <p className="text-slate-300 text-xs mt-0.5 truncate">{model.indication}</p>
           </div>
         </button>
 
@@ -299,12 +361,17 @@ function ModelCard({ model, onClick, onEdit, onDelete }) {
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[model.status]}`}>
             {model.status}
           </span>
+          {ACCESS_COLOR[access] && (
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ACCESS_COLOR[access]}`}>
+              {ACCESS_LABEL[access]}
+            </span>
+          )}
 
           {/* Three-dot menu */}
           <div className="relative">
             <button
               onClick={e => { e.stopPropagation(); setMenuOpen(o => !o); }}
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-200 hover:bg-slate-700 transition-colors"
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-slate-100 hover:bg-slate-700 transition-colors"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                 <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
@@ -352,8 +419,8 @@ function ModelCard({ model, onClick, onEdit, onDelete }) {
           { label: "Segments", value: model.segments },
         ].map(item => (
           <div key={item.label}>
-            <p className="text-slate-500 text-xs">{item.label}</p>
-            <p className="text-slate-300 text-sm font-medium">{item.value}</p>
+            <p className="text-slate-300 text-xs">{item.label}</p>
+            <p className="text-slate-100 text-sm font-medium">{item.value}</p>
           </div>
         ))}
       </div>
@@ -361,12 +428,12 @@ function ModelCard({ model, onClick, onEdit, onDelete }) {
       {/* Geographies */}
       <div className="flex flex-wrap gap-1.5 mb-4">
         {model.geographies.map(geo => (
-          <span key={geo} className="bg-slate-800 text-slate-400 text-xs px-2 py-0.5 rounded">
+          <span key={geo} className="bg-slate-800 text-slate-200 text-xs px-2 py-0.5 rounded">
             {geo}
           </span>
         ))}
         {model.showRestOfWorld && (
-          <span className="bg-slate-800 text-slate-500 text-xs px-2 py-0.5 rounded">+RoW</span>
+          <span className="bg-slate-800 text-slate-300 text-xs px-2 py-0.5 rounded">+RoW</span>
         )}
       </div>
 
@@ -375,7 +442,7 @@ function ModelCard({ model, onClick, onEdit, onDelete }) {
         onClick={onClick}
         className="w-full flex items-center justify-between pt-4 border-t border-slate-800"
       >
-        <span className="text-slate-500 text-xs">Created {model.createdAt}</span>
+        <span className="text-slate-300 text-xs">Created {model.createdAt}</span>
         <span className="text-violet-400 text-xs font-medium group-hover:text-violet-300 flex items-center gap-1">
           Open model
           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

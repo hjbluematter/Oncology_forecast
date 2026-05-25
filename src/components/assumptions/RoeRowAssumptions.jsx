@@ -1,8 +1,9 @@
 import { useState, useMemo, useRef } from "react";
 import * as XLSX from "xlsx";
 import { useForecast } from "../../store/forecastStore";
+import { apiFetch } from "../../utils/apiFetch";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 function buildPeriods(model) {
   const { startYear, timelineYears, granularity } = model;
@@ -104,7 +105,7 @@ function GeoScalingTable({ label, sourceGeo, model, data, onChange }) {
   );
 }
 
-export default function RoeRowAssumptions({ model }) {
+export default function RoeRowAssumptions({ model, readOnly = false }) {
   const { updateModel } = useForecast();
   const showRoE = model.showRestOfEurope;
   const showRoW = model.showRestOfWorld;
@@ -137,7 +138,7 @@ export default function RoeRowAssumptions({ model }) {
       const patch = {};
       if (showRoE) patch.roeAssumptions = roeData;
       if (showRoW) patch.rowAssumptions = rowData;
-      const res = await fetch(`${API}/models/${model.id}`, {
+      const res = await apiFetch(`${API}/models/${model.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
@@ -235,82 +236,86 @@ export default function RoeRowAssumptions({ model }) {
           {showRoE ? " · RoE from EU5" : ""}{showRoW ? " · RoW from US" : ""}
         </p>
         <div className="flex items-center gap-2 ml-auto">
-          {/* Download */}
-          <div className="flex items-center gap-1">
-            {showRoE && (
+          {!readOnly && (
+            <>
+              {/* Download */}
+              <div className="flex items-center gap-1">
+                {showRoE && (
+                  <button
+                    onClick={() => downloadExcel("roe")}
+                    className="flex items-center gap-1.5 text-slate-400 hover:text-emerald-600 border border-slate-700 hover:border-emerald-600/50 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                    RoE Excel
+                  </button>
+                )}
+                {showRoW && (
+                  <button
+                    onClick={() => downloadExcel("row")}
+                    className="flex items-center gap-1.5 text-slate-400 hover:text-emerald-600 border border-slate-700 hover:border-emerald-600/50 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                    RoW Excel
+                  </button>
+                )}
+              </div>
+
+              {/* Upload */}
+              {showRoE && (
+                <button
+                  onClick={() => { setUploadMsg(null); setUploadTarget("roe"); fileInputRef.current?.click(); }}
+                  className="flex items-center gap-1.5 text-slate-400 hover:text-violet-700 border border-slate-700 hover:border-violet-600/50 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+                  Upload RoE
+                </button>
+              )}
+              {showRoW && (
+                <button
+                  onClick={() => { setUploadMsg(null); setUploadTarget("row"); fileInputRef.current?.click(); }}
+                  className="flex items-center gap-1.5 text-slate-400 hover:text-violet-700 border border-slate-700 hover:border-violet-600/50 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+                  Upload RoW
+                </button>
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f && uploadTarget) handleUpload(f, uploadTarget);
+                  e.target.value = "";
+                }}
+              />
+
+              {uploadMsg && (
+                <span className={`text-xs ${uploadMsg.type === "success" ? "text-emerald-600" : "text-red-500"}`}>
+                  {uploadMsg.text}
+                </span>
+              )}
+              {saveError && <span className="text-xs text-red-500">{saveError}</span>}
+              <span className="text-xs">
+                {dirty
+                  ? <span className="text-amber-500">Unsaved</span>
+                  : savedAt ? <span className="text-slate-400">Saved {savedAt}</span> : null}
+              </span>
               <button
-                onClick={() => downloadExcel("roe")}
-                className="flex items-center gap-1.5 text-slate-400 hover:text-emerald-600 border border-slate-700 hover:border-emerald-600/50 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                onClick={handleSave}
+                disabled={saving || !dirty}
+                className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
               >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
-                RoE Excel
+                {saving
+                  ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                }
+                {saving ? "Saving…" : "Save"}
               </button>
-            )}
-            {showRoW && (
-              <button
-                onClick={() => downloadExcel("row")}
-                className="flex items-center gap-1.5 text-slate-400 hover:text-emerald-600 border border-slate-700 hover:border-emerald-600/50 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
-                RoW Excel
-              </button>
-            )}
-          </div>
-
-          {/* Upload */}
-          {showRoE && (
-            <button
-              onClick={() => { setUploadMsg(null); setUploadTarget("roe"); fileInputRef.current?.click(); }}
-              className="flex items-center gap-1.5 text-slate-400 hover:text-violet-700 border border-slate-700 hover:border-violet-600/50 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
-              Upload RoE
-            </button>
+            </>
           )}
-          {showRoW && (
-            <button
-              onClick={() => { setUploadMsg(null); setUploadTarget("row"); fileInputRef.current?.click(); }}
-              className="flex items-center gap-1.5 text-slate-400 hover:text-violet-700 border border-slate-700 hover:border-violet-600/50 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
-              Upload RoW
-            </button>
-          )}
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls"
-            className="hidden"
-            onChange={e => {
-              const f = e.target.files?.[0];
-              if (f && uploadTarget) handleUpload(f, uploadTarget);
-              e.target.value = "";
-            }}
-          />
-
-          {uploadMsg && (
-            <span className={`text-xs ${uploadMsg.type === "success" ? "text-emerald-600" : "text-red-500"}`}>
-              {uploadMsg.text}
-            </span>
-          )}
-          {saveError && <span className="text-xs text-red-500">{saveError}</span>}
-          <span className="text-xs">
-            {dirty
-              ? <span className="text-amber-500">Unsaved</span>
-              : savedAt ? <span className="text-slate-400">Saved {savedAt}</span> : null}
-          </span>
-          <button
-            onClick={handleSave}
-            disabled={saving || !dirty}
-            className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-          >
-            {saving
-              ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
-            }
-            {saving ? "Saving…" : "Save"}
-          </button>
         </div>
       </div>
 

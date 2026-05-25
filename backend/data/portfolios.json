@@ -1,0 +1,58 @@
+[
+  {
+    "name": "Summary2",
+    "modelIds": [
+      "m1779693829336"
+    ],
+    "startYear": 2026,
+    "endYear": 2035,
+    "granularity": "yearly",
+    "primaryDim": "indication",
+    "secondaryDim": "line",
+    "revenueType": "adjusted",
+    "activeFilters": {
+      "assets": [
+        "Enhertu"
+      ],
+      "indications": [
+        "NSCLC"
+      ],
+      "lines": [
+        "1L",
+        "2L",
+        "3L"
+      ],
+      "geographies": []
+    },
+    "modelNames": [
+      "Enhertu"
+    ],
+    "id": "pf1779716830468",
+    "createdAt": "2026-05-25",
+    "updatedAt": "2026-05-25T13:47:10.468Z"
+  },
+  {
+    "name": "Portfolio 25/summary15/2026",
+    "modelIds": [
+      "m1779693829336"
+    ],
+    "startYear": 2026,
+    "endYear": 2035,
+    "granularity": "monthly",
+    "primaryDim": "total",
+    "secondaryDim": "none",
+    "revenueType": "adjusted",
+    "activeFilters": {
+      "assets": [],
+      "indications": [],
+      "lines": [],
+      "geographies": []
+    },
+    "modelNames": [
+      "Enhertu"
+    ],
+    "id": "pf1779716397629",
+    "createdAt": "2026-05-25",
+    "updatedAt": "2026-05-25T13:39:57.629Z"
+  }
+]

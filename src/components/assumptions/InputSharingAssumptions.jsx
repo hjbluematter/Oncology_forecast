@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useForecast } from "../../store/forecastStore";
 import { buildCombos } from "./shared";
+import { apiFetch } from "../../utils/apiFetch";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 function buildCols(model) {
   const cols = [{ id: "epi", label: "Epi" }];
@@ -33,7 +34,7 @@ function uid() { return `g${Date.now()}_${++_uid}`; }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function InputSharingAssumptions({ model }) {
+export default function InputSharingAssumptions({ model, readOnly = false }) {
   const { updateModel } = useForecast();
   const combos = buildCombos(model);
   const cols   = buildCols(model);
@@ -99,7 +100,7 @@ export default function InputSharingAssumptions({ model }) {
   async function handleSave() {
     setSaving(true);
     const inputSharing = { groups };
-    await fetch(`${API}/models/${model.id}`, {
+    await apiFetch(`${API}/models/${model.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ inputSharing }),
