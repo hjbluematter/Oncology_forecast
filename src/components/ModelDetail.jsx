@@ -7,6 +7,8 @@ import PersistencyAssumptions from "./assumptions/PersistencyAssumptions";
 import OperationalAssumptions from "./assumptions/OperationalAssumptions";
 import InputSharingAssumptions from "./assumptions/InputSharingAssumptions";
 import { buildCombos, ComboFilter, filterCombos } from "./assumptions/shared";
+import AiChat from "./AiChat";
+import ScenariosTab from "./Scenarios";
 
 const TABS = [
   { id: "assumptions", label: "Assumptions" },
@@ -16,8 +18,9 @@ const TABS = [
 ];
 
 export default function ModelDetail() {
-  const { activeModel, setView } = useForecast();
+  const { activeModel, setView, updateModel } = useForecast();
   const [activeTab, setActiveTab] = useState("assumptions");
+  const [epiProposal, setEpiProposal] = useState(null);
 
   if (!activeModel) return null;
 
@@ -100,11 +103,28 @@ export default function ModelDetail() {
       </div>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {activeTab === "assumptions" && <AssumptionsTab model={activeModel} />}
+        {activeTab === "assumptions" && (
+          <AssumptionsTab
+            model={activeModel}
+            epiProposal={epiProposal}
+            onEpiProposalConsumed={() => setEpiProposal(null)}
+          />
+        )}
         {activeTab === "sharing" && <SharingTab model={activeModel} />}
         {activeTab === "forecast" && <PlaceholderTab label="Forecast Output" description="Revenue waterfall, LOT breakdown, and geography split will render here once assumptions are saved." />}
-        {activeTab === "scenarios" && <PlaceholderTab label="Scenario Runner" description="Natural language scenario execution and side-by-side comparison will live here." />}
+        {activeTab === "scenarios" && <ScenariosTab model={activeModel} />}
       </main>
+
+      <AiChat
+        model={activeModel}
+        onEpiProposal={(proposal) => {
+          setEpiProposal(proposal);
+          setActiveTab("assumptions");
+        }}
+        onScenarioSaved={(updated) => {
+          updateModel(activeModel.id, { scenarios: updated.scenarios });
+        }}
+      />
     </div>
   );
 }
@@ -119,7 +139,7 @@ function SharingTab({ model }) {
   );
 }
 
-function AssumptionsTab({ model }) {
+function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed }) {
   const allCombos = buildCombos(model);
   const [filterState, setFilterState] = useState(null);
   // Always provide visibleKeys so geo tabs inside DirectEntryPanel never appear —
@@ -137,13 +157,19 @@ function AssumptionsTab({ model }) {
       <AssumptionSection
         title="Epidemiology"
         subtitle={`${model.epiType} — starting patient pool`}
+        defaultOpen={!!epiProposal}
         icon={
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
           </svg>
         }
       >
-        <EpiAssumptions model={model} visibleKeys={visibleKeys} />
+        <EpiAssumptions
+          model={model}
+          visibleKeys={visibleKeys}
+          proposal={epiProposal}
+          onProposalConsumed={onEpiProposalConsumed}
+        />
       </AssumptionSection>
 
       {/* Biomarker & Funnel Rates */}
@@ -195,8 +221,8 @@ function AssumptionsTab({ model }) {
   );
 }
 
-function AssumptionSection({ title, subtitle, icon, locked, children }) {
-  const [open, setOpen] = useState(false); // collapsed by default to avoid rendering huge tables
+function AssumptionSection({ title, subtitle, icon, locked, defaultOpen, children }) {
+  const [open, setOpen] = useState(defaultOpen ?? false);
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
