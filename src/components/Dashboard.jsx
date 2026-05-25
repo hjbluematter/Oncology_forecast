@@ -28,6 +28,9 @@ export default function Dashboard() {
   const [cloudStatus, setCloudStatus] = useState(null);
   const [migrating, setMigrating] = useState(false);
   const [migrateMsg, setMigrateMsg] = useState(null);
+  const [cloudModels, setCloudModels] = useState([]);
+  const [cloudModelsLoading, setCloudModelsLoading] = useState(false);
+  const [showCloudPanel, setShowCloudPanel] = useState(false);
 
   useEffect(() => {
     fetch(`${API}/cloud/status`)
@@ -35,6 +38,27 @@ export default function Dashboard() {
       .then(s => setCloudStatus(s.state === "connected" ? "connected" : "error"))
       .catch(() => setCloudStatus("error"));
   }, []);
+
+  async function loadCloudModels() {
+    setCloudModelsLoading(true);
+    try {
+      const res = await fetch(`${API}/cloud/models`);
+      const data = await res.json();
+      setCloudModels(Array.isArray(data) ? data : []);
+      setShowCloudPanel(true);
+    } catch {
+      setCloudModels([]);
+    } finally {
+      setCloudModelsLoading(false);
+    }
+  }
+
+  async function importFromCloud(cloudModelId) {
+    const res = await fetch(`${API}/cloud/import/${cloudModelId}`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Import failed");
+    return data;
+  }
 
   async function handleMigrate() {
     setMigrating(true);
@@ -101,6 +125,22 @@ export default function Dashboard() {
                   {migrateMsg.text}
                 </span>
               )}
+              {/* Load from cloud */}
+              <button
+                onClick={loadCloudModels}
+                disabled={cloudModelsLoading || cloudStatus !== "connected"}
+                title={cloudStatus !== "connected" ? "Cloud not connected" : "Browse models saved in cloud"}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700"
+              >
+                {cloudModelsLoading ? (
+                  <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9.75v6.75m0 0l-3-3m3 3 3-3m-8.25 6a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.338-2.32 3.75 3.75 0 013.357 5.094" />
+                  </svg>
+                )}
+                {cloudModelsLoading ? "Loading…" : "From Cloud"}
+              </button>
             </div>
 
             <button
@@ -151,6 +191,50 @@ export default function Dashboard() {
             </div>
           ))}
         </div>
+
+        {/* Cloud models panel */}
+        {showCloudPanel && (
+          <div className="mb-8 bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z" />
+                </svg>
+                <span className="text-slate-200 text-sm font-medium">Cloud Models</span>
+                <span className="text-slate-500 text-xs">({cloudModels.length} saved)</span>
+              </div>
+              <button onClick={() => setShowCloudPanel(false)} className="text-slate-500 hover:text-slate-300 text-xs transition-colors">
+                Dismiss
+              </button>
+            </div>
+            {cloudModels.length === 0 ? (
+              <p className="px-5 py-6 text-slate-500 text-sm text-center">No models found in cloud.</p>
+            ) : (
+              <div className="divide-y divide-slate-800">
+                {cloudModels.map(cm => {
+                  const isLocal = models.some(m => m.id === (cm.id || cm._localId));
+                  return (
+                    <CloudModelRow
+                      key={cm._id || cm.id}
+                      model={cm}
+                      isLocal={isLocal}
+                      onImport={async () => {
+                        const data = await importFromCloud(cm.id || cm._localId);
+                        if (data.action === "imported") {
+                          // refresh the local list from backend
+                          window.location.reload();
+                        } else {
+                          window.location.reload();
+                        }
+                      }}
+                      onOpen={() => openModel(cm.id || cm._localId)}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Model cards grid */}
         {loading ? (
@@ -354,6 +438,65 @@ function NewModelCard({ onClick }) {
         <p className="text-slate-500 text-xs mt-1">Configure a new asset from scratch</p>
       </div>
     </button>
+  );
+}
+
+function CloudModelRow({ model, isLocal, onImport, onOpen }) {
+  const [importing, setImporting] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const savedAt = model.cloudSavedAt ? new Date(model.cloudSavedAt).toLocaleString() : "—";
+
+  async function handleImport() {
+    setImporting(true);
+    setMsg(null);
+    try {
+      await onImport();
+    } catch (e) {
+      setMsg(e.message);
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div className="px-5 py-3.5 flex items-center gap-4 hover:bg-slate-800/30 transition-colors">
+      <div className="flex-1 min-w-0">
+        <p className="text-slate-200 text-sm font-medium truncate">{model.assetName}</p>
+        <p className="text-slate-500 text-xs mt-0.5 truncate">
+          {model.indication} · {model.epiType} · {model.linesOfTherapy}L · {model.geographies?.length ?? "?"} geo{model.geographies?.length !== 1 ? "s" : ""}
+        </p>
+      </div>
+      <div className="shrink-0 text-right">
+        <p className="text-slate-500 text-xs">Cloud saved</p>
+        <p className="text-slate-400 text-xs">{savedAt}</p>
+      </div>
+      <div className="shrink-0 flex items-center gap-2">
+        {isLocal ? (
+          <>
+            <span className="text-emerald-400 text-xs font-medium px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20">Local ✓</span>
+            <button
+              onClick={handleImport}
+              disabled={importing}
+              className="text-xs text-slate-400 hover:text-violet-300 border border-slate-700 hover:border-violet-500/40 px-3 py-1.5 rounded-lg transition-all disabled:opacity-40"
+            >
+              {importing ? "Syncing…" : "Re-sync"}
+            </button>
+            <button onClick={onOpen} className="text-xs text-violet-400 hover:text-violet-300 border border-violet-500/30 hover:border-violet-400 px-3 py-1.5 rounded-lg transition-all">
+              Open →
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={handleImport}
+            disabled={importing}
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white transition-colors"
+          >
+            {importing ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : null}
+            {importing ? "Importing…" : "Import to Local"}
+          </button>
+        )}
+        {msg && <span className="text-red-400 text-xs">{msg}</span>}
+      </div>
+    </div>
   );
 }
 

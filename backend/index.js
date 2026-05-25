@@ -72,7 +72,45 @@ app.delete("/api/models/:id", (req, res) => {
 // ─── Cloud routes ─────────────────────────────────────────────────────────────
 
 app.get("/api/cloud/status", (req, res) => {
-  res.json({ connected: true });
+  res.json(getStatus());
+});
+
+// ─── Import one model from cloud into local storage ───────────────────────────
+
+app.post("/api/cloud/import/:id", async (req, res) => {
+  try {
+    const db = await connect();
+    if (!db) return res.status(503).json({ error: getStatus().error || "Cloud not connected" });
+
+    const collection = db.collection("models");
+    // Try finding by local id field first, then MongoDB _id
+    const doc = await collection.findOne({ id: req.params.id })
+      || await collection.findOne({ _localId: req.params.id });
+
+    if (!doc) return res.status(404).json({ error: "Model not found in cloud" });
+
+    // Strip MongoDB-internal fields
+    const { _id, _localId, cloudSavedAt, ...modelData } = doc;
+
+    const models = readModels();
+    const existingIdx = models.findIndex(m => m.id === modelData.id);
+
+    if (existingIdx !== -1) {
+      // Already exists locally — overwrite with cloud version
+      models[existingIdx] = { ...modelData, cloudSavedAt };
+      writeModels(models);
+      return res.json({ action: "updated", model: models[existingIdx] });
+    } else {
+      // New to this machine — prepend
+      const newModel = { ...modelData, cloudSavedAt };
+      models.unshift(newModel);
+      writeModels(models);
+      return res.json({ action: "imported", model: newModel });
+    }
+  } catch (err) {
+    console.error("Cloud import error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post("/api/cloud/save/:id", async (req, res) => {
