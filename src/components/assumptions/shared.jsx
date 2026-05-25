@@ -390,13 +390,16 @@ function TableRow({ row, ri, keys, editable, showPct, onCell }) {
         return (
           <td key={k} className="border-l border-[#d1e0f5] px-0.5 py-0.5">
             {isEditable ? (
-              <input
-                type="text"
-                value={display}
-                onChange={e => onCell(ri, k, e.target.value)}
-                placeholder="—"
-                className="w-full h-full px-2 py-1.5 text-right tabular-nums text-slate-100 text-xs bg-transparent border border-transparent rounded hover:border-slate-500 focus:border-violet-500 focus:bg-white focus:outline-none transition-colors placeholder-slate-500"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={display}
+                  onChange={e => onCell(ri, k, e.target.value)}
+                  placeholder="—"
+                  className={`w-full h-full py-1.5 text-right tabular-nums text-slate-100 text-xs bg-transparent border border-transparent rounded hover:border-slate-500 focus:border-violet-500 focus:bg-white focus:outline-none transition-colors placeholder-slate-500 ${showPct ? "pl-2 pr-5" : "px-2"}`}
+                />
+                {showPct && <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs pointer-events-none select-none">%</span>}
+              </div>
             ) : (
               <div className={`px-2 py-1.5 text-right tabular-nums text-xs ${display ? (row.locked ? "text-slate-400" : "text-slate-200") : "text-slate-500"}`}>
                 {display ? (showPct ? `${display}%` : display) : "—"}
@@ -518,7 +521,13 @@ export function DirectEntryPanel({
   const [inputLevel, setInputLevel] = useState(savedValues?.inputLevel ?? modelLevel);
   const [values, setValues] = useState(() => {
     const sv = savedValues?.combos ?? {};
-    return Object.fromEntries(combos.map(c => [c.key, sv[c.key] ?? {}]));
+    return Object.fromEntries(combos.map(c => {
+      const raw = sv[c.key];
+      if (!raw) return [c.key, {}];
+      // Saved data is {input: {period: val}, computed: {...}} — extract just the period values
+      const flat = raw.input !== undefined ? raw.input : raw;
+      return [c.key, flat ?? {}];
+    }));
   });
   const [saving, setSaving]       = useState(false);
   const [savedAt, setSavedAt]     = useState(null);
@@ -564,22 +573,31 @@ export function DirectEntryPanel({
     return convertValues(v, modelLevel, inputLevel, model.startYear, model.timelineYears, conversionType);
   }
 
+  const [saveError, setSaveError] = useState(null);
+
   async function handleSave() {
     setSaving(true);
-    // Propagate primary values into dependent combos before saving
-    const finalValues = { ...values };
-    for (const [depKey, info] of Object.entries(dependentOf)) {
-      finalValues[depKey] = { ...(finalValues[info.primaryKey] ?? {}) };
-    }
-    const combosPayload = Object.fromEntries(combos.map(c => [
-      c.key, {
-        input: finalValues[c.key] ?? {},
-        computed: convertValues(finalValues[c.key] ?? {}, modelLevel, inputLevel, model.startYear, model.timelineYears, conversionType),
+    setSaveError(null);
+    try {
+      // Propagate primary values into dependent combos before saving
+      const finalValues = { ...values };
+      for (const [depKey, info] of Object.entries(dependentOf)) {
+        finalValues[depKey] = { ...(finalValues[info.primaryKey] ?? {}) };
       }
-    ]));
-    await onSave({ inputLevel, combos: combosPayload });
-    setSaving(false); setDirty(false);
-    setSavedAt(new Date().toLocaleTimeString());
+      const combosPayload = Object.fromEntries(combos.map(c => [
+        c.key, {
+          input: finalValues[c.key] ?? {},
+          computed: convertValues(finalValues[c.key] ?? {}, modelLevel, inputLevel, model.startYear, model.timelineYears, conversionType),
+        }
+      ]));
+      await onSave({ inputLevel, combos: combosPayload });
+      setDirty(false);
+      setSavedAt(new Date().toLocaleTimeString());
+    } catch (e) {
+      setSaveError(e?.message ?? "Save failed — is the backend running?");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function downloadExcel() {
@@ -690,6 +708,7 @@ export function DirectEntryPanel({
             onChange={e => { const f = e.target.files?.[0]; if(f) handleUpload(f); e.target.value=""; }}
           />
           {uploadMsg && <span className={`text-xs ${uploadMsg.type==="success"?"text-emerald-400":"text-red-400"}`}>{uploadMsg.text}</span>}
+          {saveError && <span className="text-xs text-red-400">{saveError}</span>}
           <span className="text-xs">{dirty?<span className="text-amber-500">Unsaved</span>:savedAt?<span className="text-slate-600">Saved {savedAt}</span>:null}</span>
           <button onClick={handleSave} disabled={saving||!dirty}
             className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"

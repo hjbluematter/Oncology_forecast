@@ -1,12 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useForecast } from "../store/forecastStore";
+
+const API = "http://localhost:3001/api";
 import EpiAssumptions from "./assumptions/EpiAssumptions";
 import FunnelCutAssumptions from "./assumptions/FunnelCutAssumptions";
 import MarketShareAssumptions from "./assumptions/MarketShareAssumptions";
 import PersistencyAssumptions from "./assumptions/PersistencyAssumptions";
+import ProgressionAssumptions from "./assumptions/ProgressionAssumptions";
 import OperationalAssumptions from "./assumptions/OperationalAssumptions";
 import InputSharingAssumptions from "./assumptions/InputSharingAssumptions";
 import { buildCombos, ComboFilter, filterCombos } from "./assumptions/shared";
+import ForecastOutput from "./ForecastOutput";
 
 const TABS = [
   { id: "assumptions", label: "Assumptions" },
@@ -18,6 +22,37 @@ const TABS = [
 export default function ModelDetail() {
   const { activeModel, setView } = useForecast();
   const [activeTab, setActiveTab] = useState("assumptions");
+  const [cloudStatus, setCloudStatus] = useState(null); // null | "connected" | "error"
+  const [cloudSaving, setCloudSaving] = useState(false);
+  const [cloudMsg, setCloudMsg] = useState(null); // { type: "success"|"error", text, at }
+
+  // Check cloud connectivity once on mount
+  useEffect(() => {
+    fetch(`${API}/cloud/status`)
+      .then(r => r.json())
+      .then(s => setCloudStatus(s.state === "connected" ? "connected" : "error"))
+      .catch(() => setCloudStatus("error"));
+  }, []);
+
+  const handleCloudSave = useCallback(async () => {
+    setCloudSaving(true);
+    setCloudMsg(null);
+    try {
+      const res = await fetch(`${API}/cloud/save/${activeModel.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: activeModel }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Save failed");
+      setCloudStatus("connected");
+      setCloudMsg({ type: "success", text: `Saved to cloud · ${new Date(data.cloudSavedAt).toLocaleTimeString()}` });
+    } catch (e) {
+      setCloudMsg({ type: "error", text: e.message });
+    } finally {
+      setCloudSaving(false);
+    }
+  }, [activeModel]);
 
   if (!activeModel) return null;
 
@@ -56,6 +91,38 @@ export default function ModelDetail() {
             }`}>
               {activeModel.status}
             </span>
+
+            {/* Cloud save */}
+            <div className="flex items-center gap-2 border-l border-slate-700 pl-3">
+              {/* Status dot */}
+              <span
+                title={cloudStatus === "connected" ? "MongoDB Atlas connected" : cloudStatus === "error" ? "Cloud not connected" : "Checking…"}
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  cloudStatus === "connected" ? "bg-emerald-400" :
+                  cloudStatus === "error"     ? "bg-red-500" :
+                                               "bg-slate-600 animate-pulse"
+                }`}
+              />
+              <button
+                onClick={handleCloudSave}
+                disabled={cloudSaving}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-500"
+              >
+                {cloudSaving ? (
+                  <div className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.338-2.32 3.75 3.75 0 013.357 5.094" />
+                  </svg>
+                )}
+                {cloudSaving ? "Saving…" : "Save to Cloud"}
+              </button>
+              {cloudMsg && (
+                <span className={`text-xs ${cloudMsg.type === "success" ? "text-emerald-400" : "text-red-400"}`}>
+                  {cloudMsg.text}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -102,7 +169,7 @@ export default function ModelDetail() {
       <main className="max-w-7xl mx-auto px-6 py-8">
         {activeTab === "assumptions" && <AssumptionsTab model={activeModel} />}
         {activeTab === "sharing" && <SharingTab model={activeModel} />}
-        {activeTab === "forecast" && <PlaceholderTab label="Forecast Output" description="Revenue waterfall, LOT breakdown, and geography split will render here once assumptions are saved." />}
+        {activeTab === "forecast" && <ForecastOutput model={activeModel} />}
         {activeTab === "scenarios" && <PlaceholderTab label="Scenario Runner" description="Natural language scenario execution and side-by-side comparison will live here." />}
       </main>
     </div>
@@ -180,6 +247,23 @@ function AssumptionsTab({ model }) {
           icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>}
         >
           <PersistencyAssumptions model={model} visibleKeys={visibleKeys} />
+        </AssumptionSection>
+      )}
+
+      {/* Progression Rates — Patient Flow models only */}
+      {model.modelType === "Patient Flow" && (model.linesOfTherapy ?? 1) > 1 && (
+        <AssumptionSection
+          title="Progression Rates"
+          subtitle={`% of patients progressing to next line · ${
+            Array.from({ length: (model.linesOfTherapy ?? 1) - 1 }, (_, i) => `${i + 1}L→${i + 2}L`).join(", ")
+          } · ${model.segments ?? 1} segment${(model.segments ?? 1) > 1 ? "s" : ""}`}
+          icon={
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5L7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5" />
+            </svg>
+          }
+        >
+          <ProgressionAssumptions model={model} visibleKeys={visibleKeys} />
         </AssumptionSection>
       )}
 

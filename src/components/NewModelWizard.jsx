@@ -9,8 +9,9 @@ const STEPS = [
   { id: 3, label: "Epidemiology Funnel", short: "Epi Funnel" },
   { id: 4, label: "Geographies", short: "Geos" },
   { id: 5, label: "Therapy & Segments", short: "LOT & Segments" },
-  { id: 6, label: "Revenue Adjustments", short: "IRA & PTRS" },
-  { id: 7, label: "Review & Create", short: "Review" },
+  { id: 6, label: "Patient Flow Routing", short: "Flow Rules" },
+  { id: 7, label: "Revenue Adjustments", short: "IRA & PTRS" },
+  { id: 8, label: "Review & Create", short: "Review" },
 ];
 
 const CURRENT_YEAR = 2026;
@@ -98,14 +99,27 @@ export default function NewModelWizard() {
     iraSmallMolecule:     editingModel?.iraSmallMolecule     ?? true,
     applyPTRS:            editingModel?.applyPTRS            ?? false,
     ptrsValue:            editingModel?.ptrsValue            ?? 85,
+    patientFlowRules:     editingModel?.patientFlowRules     ?? {},
   });
 
   function update(patch) {
     setForm(prev => ({ ...prev, ...patch }));
   }
 
-  function next() { setStep(s => Math.min(s + 1, STEPS.length)); }
-  function back() { setStep(s => Math.max(s - 1, 1)); }
+  function next() {
+    setStep(s => {
+      const n = s + 1;
+      if (n === 6 && form.modelType !== "Patient Flow") return n + 1;
+      return Math.min(n, STEPS.length);
+    });
+  }
+  function back() {
+    setStep(s => {
+      const p = s - 1;
+      if (p === 6 && form.modelType !== "Patient Flow") return p - 1;
+      return Math.max(p, 1);
+    });
+  }
 
   function buildPayload() {
     return {
@@ -131,6 +145,7 @@ export default function NewModelWizard() {
       iraSmallMolecule:     form.iraSmallMolecule,
       applyPTRS:            form.applyPTRS,
       ptrsValue:            form.ptrsValue,
+      patientFlowRules:     form.patientFlowRules,
     };
   }
 
@@ -175,7 +190,7 @@ export default function NewModelWizard() {
 
       <div className="max-w-5xl mx-auto px-6 py-10 w-full flex-1 flex flex-col">
         {/* Step progress */}
-        <StepIndicator steps={STEPS} current={step} />
+        <StepIndicator steps={STEPS} current={step} isPatientFlow={form.modelType === "Patient Flow"} />
 
         {/* Step content */}
         <div className="flex-1 mt-10">
@@ -184,8 +199,9 @@ export default function NewModelWizard() {
           {step === 3 && <StepEpiFunnel form={form} update={update} />}
           {step === 4 && <StepGeographies form={form} update={update} />}
           {step === 5 && <StepTherapySegments form={form} update={update} />}
-          {step === 6 && <StepRevenueAdjustments form={form} update={update} />}
-          {step === 7 && <StepReview form={form} />}
+          {step === 6 && <StepPatientFlowRouting form={form} update={update} />}
+          {step === 7 && <StepRevenueAdjustments form={form} update={update} />}
+          {step === 8 && <StepReview form={form} />}
         </div>
 
         {/* Navigation */}
@@ -233,15 +249,19 @@ export default function NewModelWizard() {
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
 
-function StepIndicator({ steps, current }) {
+function StepIndicator({ steps, current, isPatientFlow }) {
   return (
     <div className="flex items-center">
-      {steps.map((s, i) => (
+      {steps.map((s, i) => {
+        const skipped = s.id === 6 && !isPatientFlow;
+        return (
         <div key={s.id} className="flex items-center flex-1 last:flex-none">
           <div className="flex flex-col items-center gap-1.5">
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
-                s.id < current
+                skipped
+                  ? "bg-slate-800/50 text-slate-700 ring-1 ring-dashed ring-slate-700"
+                  : s.id < current
                   ? "bg-violet-600 text-white"
                   : s.id === current
                   ? "bg-violet-600 text-white ring-4 ring-violet-600/20"
@@ -256,7 +276,7 @@ function StepIndicator({ steps, current }) {
                 s.id
               )}
             </div>
-            <span className={`text-xs hidden sm:block ${s.id === current ? "text-violet-300 font-medium" : s.id < current ? "text-slate-400" : "text-slate-600"}`}>
+            <span className={`text-xs hidden sm:block ${skipped ? "text-slate-700 line-through" : s.id === current ? "text-violet-300 font-medium" : s.id < current ? "text-slate-400" : "text-slate-600"}`}>
               {s.short}
             </span>
           </div>
@@ -264,7 +284,8 @@ function StepIndicator({ steps, current }) {
             <div className={`flex-1 h-px mx-2 mb-4 ${s.id < current ? "bg-violet-600" : "bg-slate-800"}`} />
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -965,7 +986,125 @@ function StepTherapySegments({ form, update }) {
   );
 }
 
-// ─── Step 6: Revenue Adjustments (IRA & PTRS) ────────────────────────────────
+// ─── Step 6: Patient Flow Routing Rules ──────────────────────────────────────
+
+function StepPatientFlowRouting({ form, update }) {
+  const LOT_LABELS = ["1L", "2L", "3L", "4L", "5L", "6L+"];
+
+  const segments = Array.from({ length: form.segments }, (_, i) =>
+    form.segmentNames[i]?.trim() || `Segment ${i + 1}`
+  );
+
+  const products = [
+    form.assetName?.trim() || "Key Product",
+    ...Array.from({ length: form.competitors }, (_, i) =>
+      form.competitorNames[i]?.trim() || `Competitor ${String.fromCharCode(88 + i)}`
+    ),
+  ];
+
+  // Lines 2L and beyond — each line has a matrix showing routing into that line
+  const routingLines = Array.from(
+    { length: form.linesOfTherapy - 1 },
+    (_, i) => ({ intoLine: LOT_LABELS[i + 1], fromLine: LOT_LABELS[i] })
+  );
+
+  function getRule(line, segment, product) {
+    return form.patientFlowRules?.[line]?.[segment]?.[product] ?? "";
+  }
+
+  function setRule(line, segment, product, targetSegment) {
+    const rules = { ...(form.patientFlowRules ?? {}) };
+    if (!rules[line]) rules[line] = {};
+    if (!rules[line][segment]) rules[line][segment] = {};
+    rules[line][segment] = { ...rules[line][segment], [product]: targetSegment };
+    update({ patientFlowRules: rules });
+  }
+
+  if (form.linesOfTherapy < 2) {
+    return (
+      <StepShell
+        title="Patient Flow Routing Rules"
+        description="Configure which segment patients flow into at each subsequent line."
+      >
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 text-center">
+          <p className="text-slate-400 text-sm">No routing rules needed — model has only 1 line of therapy.</p>
+        </div>
+      </StepShell>
+    );
+  }
+
+  return (
+    <StepShell
+      title="Patient Flow Routing Rules"
+      description="For each subsequent line, define which segment a patient enters based on their prior segment and the product they received."
+    >
+      <div className="space-y-10">
+        {routingLines.map(({ intoLine, fromLine }) => (
+          <div key={intoLine}>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-7 h-7 rounded-lg bg-violet-600/20 flex items-center justify-center shrink-0">
+                <span className="text-violet-300 text-xs font-bold">{intoLine}</span>
+              </div>
+              <p className="text-slate-200 text-sm font-semibold">Routing into {intoLine}</p>
+            </div>
+            <p className="text-slate-500 text-xs mb-4 pl-10">
+              Patient was in <span className="text-slate-400">{fromLine}</span> — select which segment they enter at {intoLine} based on their prior segment and product used.
+            </p>
+
+            <div className="overflow-x-auto rounded-xl border border-slate-800">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr>
+                    <th className="text-left text-slate-500 text-xs font-medium px-4 py-2.5 bg-slate-900 border-b border-r border-slate-800 whitespace-nowrap">
+                      Prior Segment
+                    </th>
+                    {products.map((product, pIdx) => (
+                      <th
+                        key={pIdx}
+                        className="text-center text-slate-400 text-xs font-medium px-3 py-2.5 bg-slate-900 border-b border-r last:border-r-0 border-slate-800 min-w-[140px]"
+                      >
+                        {product}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {segments.map((segment, sIdx) => (
+                    <tr key={sIdx} className="group">
+                      <td className="text-slate-300 text-xs font-medium px-4 py-2 bg-slate-900/60 border-b border-r border-slate-800 whitespace-nowrap last-row:border-b-0">
+                        {segment}
+                      </td>
+                      {products.map((product, pIdx) => (
+                        <td key={pIdx} className="px-2 py-1.5 border-b border-r last:border-r-0 border-slate-800 bg-slate-950">
+                          <select
+                            value={getRule(intoLine, segment, product)}
+                            onChange={e => setRule(intoLine, segment, product, e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-violet-500 transition-colors appearance-none cursor-pointer"
+                          >
+                            <option value="">— select —</option>
+                            {segments.map((seg, i) => (
+                              <option key={i} value={seg}>{seg}</option>
+                            ))}
+                          </select>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+
+        <div className="bg-slate-900/50 border border-slate-800 rounded-lg px-4 py-3 text-slate-500 text-xs">
+          Rules can be updated later in the model assumptions. Cells left blank will default to the patient staying in their current segment.
+        </div>
+      </div>
+    </StepShell>
+  );
+}
+
+// ─── Step 7: Revenue Adjustments (IRA & PTRS) ────────────────────────────────
 
 function StepRevenueAdjustments({ form, update }) {
   return (
@@ -1144,7 +1283,7 @@ function StepRevenueAdjustments({ form, update }) {
   );
 }
 
-// ─── Step 7: Review ───────────────────────────────────────────────────────────
+// ─── Step 8: Review ───────────────────────────────────────────────────────────
 
 function StepReview({ form }) {
   const endYear = form.startYear + form.timelineYears - 1;
@@ -1204,6 +1343,30 @@ function StepReview({ form }) {
         },
       ],
     },
+    ...(form.modelType === "Patient Flow" && form.linesOfTherapy >= 2 ? [{
+      title: "Patient Flow Routing",
+      items: (() => {
+        const LOT_LABELS = ["1L", "2L", "3L", "4L", "5L", "6L+"];
+        const segments = Array.from({ length: form.segments }, (_, i) =>
+          form.segmentNames[i]?.trim() || `Segment ${i + 1}`
+        );
+        const products = [
+          form.assetName?.trim() || "Key Product",
+          ...Array.from({ length: form.competitors }, (_, i) =>
+            form.competitorNames[i]?.trim() || `Competitor ${String.fromCharCode(88 + i)}`
+          ),
+        ];
+        const lines = Array.from({ length: form.linesOfTherapy - 1 }, (_, i) => LOT_LABELS[i + 1]);
+        const totalCells = lines.length * segments.length * products.length;
+        const filledCells = lines.reduce((acc, line) => {
+          return acc + segments.reduce((a2, seg) => {
+            return a2 + products.filter(p => form.patientFlowRules?.[line]?.[seg]?.[p]).length;
+          }, 0);
+        }, 0);
+        return [{ label: "Routing matrices", value: `${lines.length} (${LOT_LABELS[1]}–${LOT_LABELS[form.linesOfTherapy - 1]})` },
+                { label: "Rules configured", value: `${filledCells} / ${totalCells} cells filled` }];
+      })(),
+    }] : []),
     {
       title: "Revenue Adjustments",
       items: [
@@ -1324,4 +1487,9 @@ function stepIsValid(step, form) {
   if (step === 1) return form.assetName.trim() !== "" && form.indication.trim() !== "";
   if (step === 4) return form.geographies.length > 0;
   return true;
+}
+
+// effective total steps accounting for the skipped Patient Flow Routing step
+function totalSteps(form) {
+  return form.modelType === "Patient Flow" ? STEPS.length : STEPS.length - 1;
 }
