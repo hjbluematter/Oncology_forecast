@@ -30,7 +30,7 @@
   }
   input[type="text"]::placeholder,
   input[type="number"]::placeholder {
-    color: #b0bec5;
+    color: #94a3b8;
   }
 
   /* Scrollbar — light theme */

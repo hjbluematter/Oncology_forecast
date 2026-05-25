@@ -59,9 +59,13 @@ export default function AiChat({ model, activeTab, onEpiProposal, onFunnelPropos
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(scenarioData),
     });
-    const updated = await res.json();
-    onScenarioSaved?.(updated);
-    return updated;
+    const updatedModel = await res.json();
+    // Pass the new scenario object (last in the array) up so ModelDetail can sync state
+    const newScenario = Array.isArray(updatedModel.scenarios)
+      ? updatedModel.scenarios[updatedModel.scenarios.length - 1]
+      : scenarioData;
+    onScenarioSaved?.(newScenario);
+    return updatedModel;
   }
 
   return (

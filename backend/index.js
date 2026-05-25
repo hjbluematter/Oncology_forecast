@@ -189,28 +189,47 @@ app.post("/api/ai/chat", async (req, res) => {
   return res.json({ intent: "general", text: result.text });
 });
 
-// ─── Scenario persistence ─────────────────────────────────────────────────────
+// ─── Scenario persistence (array-based — ScenarioManager uses model.scenarios[]) ──
 
+// POST /api/models/:id/scenarios — append a new scenario to the array
 app.post("/api/models/:id/scenarios", (req, res) => {
   const models = readModels();
   const idx = models.findIndex((m) => m.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "Model not found" });
 
-  const scenario = { ...req.body, savedAt: new Date().toISOString() };
-  const existing = models[idx].scenarios ?? {};
-  models[idx] = { ...models[idx], scenarios: { ...existing, [scenario.name]: scenario } };
+  const scenario = {
+    id: `sc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    createdAt: new Date().toLocaleDateString(),
+    savedAt: new Date().toISOString(),
+    ...req.body,
+  };
+
+  // Support both legacy object shape and new array shape
+  const existing = models[idx].scenarios;
+  const existingArr = Array.isArray(existing)
+    ? existing
+    : (existing ? Object.values(existing) : []);
+
+  models[idx] = { ...models[idx], scenarios: [...existingArr, scenario] };
   writeModels(models);
   res.status(201).json(models[idx]);
 });
 
-app.delete("/api/models/:id/scenarios/:name", (req, res) => {
+// DELETE /api/models/:id/scenarios/:scenarioId — remove by id
+app.delete("/api/models/:id/scenarios/:scenarioId", (req, res) => {
   const models = readModels();
   const idx = models.findIndex((m) => m.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "Model not found" });
 
-  const scenarios = { ...(models[idx].scenarios ?? {}) };
-  delete scenarios[req.params.name];
-  models[idx] = { ...models[idx], scenarios };
+  const existing = models[idx].scenarios;
+  const existingArr = Array.isArray(existing)
+    ? existing
+    : (existing ? Object.values(existing) : []);
+
+  models[idx] = {
+    ...models[idx],
+    scenarios: existingArr.filter(s => s.id !== req.params.scenarioId && s.name !== req.params.scenarioId),
+  };
   writeModels(models);
   res.json(models[idx]);
 });

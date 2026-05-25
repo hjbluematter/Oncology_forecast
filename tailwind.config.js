@@ -7,17 +7,17 @@ export default {
         // ── Remap slate to a light palette (Blue Matter theme) ──────────────────
         // Dark slate values in JSX → inverted light equivalents
         slate: {
-          50:  "#0f172a",  // was near-white → now darkest (text on light bg)
-          100: "#1e293b",
-          200: "#334155",
-          300: "#475569",
-          400: "#64748b",
-          500: "#94a3b8",  // muted text (mid-grey, readable on white)
-          600: "#b0bec5",  // subtle text
-          700: "#d0d7de",  // light borders, dividers
-          800: "#e8ecf0",  // card borders, section dividers
-          900: "#ffffff",  // was near-black card bg → white cards
-          950: "#f0f4f8",  // was darkest app bg → off-white page bg
+          50:  "#0f172a",  // darkest — primary headings
+          100: "#1e293b",  // primary body text
+          200: "#1e293b",  // primary body text (alias)
+          300: "#334155",  // secondary labels
+          400: "#334155",  // secondary labels (alias)
+          500: "#475569",  // hint / descriptive text  — 5.9:1 on white, WCAG AA
+          600: "#52637a",  // subtle text             — 5.1:1 on white, WCAG AA
+          700: "#94a3b8",  // borders / dividers (not used for text)
+          800: "#e2e8f0",  // card borders
+          900: "#ffffff",  // white card backgrounds
+          950: "#f0f4f8",  // off-white page background
         },
 
         // ── Remap violet to Blue Matter blue ────────────────────────────────────

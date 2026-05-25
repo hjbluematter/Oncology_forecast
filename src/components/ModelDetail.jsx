@@ -4,14 +4,17 @@ import EpiAssumptions from "./assumptions/EpiAssumptions";
 import FunnelCutAssumptions from "./assumptions/FunnelCutAssumptions";
 import MarketShareAssumptions from "./assumptions/MarketShareAssumptions";
 import PersistencyAssumptions from "./assumptions/PersistencyAssumptions";
+import ProgressionAssumptions from "./assumptions/ProgressionAssumptions";
 import OperationalAssumptions from "./assumptions/OperationalAssumptions";
 import InputSharingAssumptions from "./assumptions/InputSharingAssumptions";
-import ProgressionAssumptions from "./assumptions/ProgressionAssumptions";
-import ForecastOutput from "./ForecastOutput";
+import RoeRowAssumptions from "./assumptions/RoeRowAssumptions";
 import { buildCombos, ComboFilter, filterCombos } from "./assumptions/shared";
+import ForecastOutput from "./ForecastOutput";
+import ScenarioManager from "./ScenarioManager";
 import AiChat from "./AiChat";
-import ScenariosTab from "./Scenarios";
 import ResearchTab from "./ResearchTab";
+
+const API = "http://localhost:3001/api";
 
 const TABS = [
   { id: "assumptions", label: "Assumptions" },
@@ -28,34 +31,35 @@ export default function ModelDetail() {
   const [funnelProposal, setFunnelProposal] = useState(null);
 
   // Cloud save state
-  const [cloudStatus, setCloudStatus] = useState(null);
+  const [cloudStatus, setCloudStatus] = useState(null); // null | "connected" | "error"
   const [cloudSaving, setCloudSaving] = useState(false);
   const [cloudMsg, setCloudMsg] = useState(null);
 
+  // Check cloud connectivity once on mount
   useEffect(() => {
-    fetch("http://localhost:3001/api/cloud/status")
+    fetch(`${API}/cloud/status`)
       .then(r => r.json())
-      .then(d => setCloudStatus(d.connected ? "connected" : "disconnected"))
-      .catch(() => setCloudStatus("disconnected"));
+      .then(s => setCloudStatus(s.state === "connected" ? "connected" : "error"))
+      .catch(() => setCloudStatus("error"));
   }, []);
 
   const handleCloudSave = useCallback(async () => {
-    if (!activeModel) return;
     setCloudSaving(true);
     setCloudMsg(null);
     try {
-      const r = await fetch(`http://localhost:3001/api/cloud/save/${activeModel.id}`, { method: "POST" });
-      const d = await r.json();
-      if (d.success) {
-        setCloudMsg({ type: "success", text: "Saved to cloud" });
-      } else {
-        setCloudMsg({ type: "error", text: d.error ?? "Save failed" });
-      }
-    } catch {
-      setCloudMsg({ type: "error", text: "Network error" });
+      const res = await fetch(`${API}/cloud/save/${activeModel.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: activeModel }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Save failed");
+      setCloudStatus("connected");
+      setCloudMsg({ type: "success", text: `Saved to cloud · ${new Date(data.cloudSavedAt).toLocaleTimeString()}` });
+    } catch (e) {
+      setCloudMsg({ type: "error", text: e.message });
     } finally {
       setCloudSaving(false);
-      setTimeout(() => setCloudMsg(null), 3000);
     }
   }, [activeModel]);
 
@@ -65,7 +69,7 @@ export default function ModelDetail() {
       ? { pulledAt: new Date().toISOString(), rows: sessionData }
       : { pulledAt: new Date().toISOString(), ...sessionData };
     const epiSources = [...(activeModel.epiSources ?? []), newSession];
-    await fetch("http://localhost:3001/api/models/" + activeModel.id, {
+    await fetch(`${API}/models/${activeModel.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ epiSources }),
@@ -114,7 +118,7 @@ export default function ModelDetail() {
             <div className="flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full shrink-0 ${
                 cloudStatus === "connected" ? "bg-emerald-400" :
-                cloudStatus === "disconnected" ? "bg-red-400" : "bg-slate-600"
+                cloudStatus === "error" ? "bg-red-400" : "bg-slate-600"
               }`} title={cloudStatus ?? "checking…"} />
               <button
                 onClick={handleCloudSave}
@@ -194,9 +198,10 @@ export default function ModelDetail() {
             onModelUpdate={(patch) => updateModel(activeModel.id, patch)}
           />
         )}
-        {activeTab === "scenarios" && <ScenariosTab model={activeModel} />}
+        {activeTab === "scenarios" && <ScenarioManager model={activeModel} />}
       </main>
 
+      {/* AI Chat — available on all tabs */}
       <AiChat
         model={activeModel}
         activeTab={activeTab}
@@ -209,8 +214,11 @@ export default function ModelDetail() {
           setActiveTab("assumptions");
         }}
         onSourcesSaved={handleSourcesSaved}
-        onScenarioSaved={(updated) => {
-          updateModel(activeModel.id, { scenarios: updated.scenarios });
+        onScenarioSaved={(scenarioObj) => {
+          // AI-created scenario: add to the scenarios array used by ScenarioManager
+          const existing = Array.isArray(activeModel.scenarios) ? activeModel.scenarios : [];
+          const updated = [...existing, scenarioObj];
+          updateModel(activeModel.id, { scenarios: updated });
         }}
       />
     </div>
@@ -232,18 +240,14 @@ function SharingTab({ model }) {
 function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelProposal, onFunnelProposalConsumed }) {
   const allCombos = buildCombos(model);
   const [filterState, setFilterState] = useState(null);
-  // Always provide visibleKeys so geo tabs inside DirectEntryPanel never appear —
-  // null filterState means "all selected", so we pass a Set of all combo keys.
   const visibleKeys = filterState
     ? filterCombos(allCombos, filterState)
     : new Set(allCombos.map(c => c.key));
 
   return (
     <div className="space-y-6">
-      {/* Global combo filter */}
       <ComboFilter combos={allCombos} onChange={setFilterState} />
 
-      {/* Section: Epidemiology */}
       <AssumptionSection
         title="Epidemiology"
         subtitle={`${model.epiType} — starting patient pool`}
@@ -262,7 +266,6 @@ function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelPropo
         />
       </AssumptionSection>
 
-      {/* Biomarker & Funnel Rates */}
       <AssumptionSection
         title="Biomarker & Funnel Rates"
         subtitle="Period-by-period values for each percentage-based funnel cut"
@@ -280,7 +283,6 @@ function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelPropo
         />
       </AssumptionSection>
 
-      {/* Market Share by Line */}
       <AssumptionSection
         title="Market Share by Line"
         subtitle="Baseline + evented shares per product, LoT and segment"
@@ -293,7 +295,6 @@ function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelPropo
         <MarketShareAssumptions model={model} visibleKeys={visibleKeys} />
       </AssumptionSection>
 
-      {/* Persistency — incidence models only */}
       {(model.epiType ?? "Incidence") === "Incidence" && (
         <AssumptionSection
           title="Persistency (Duration of Therapy)"
@@ -304,25 +305,43 @@ function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelPropo
         </AssumptionSection>
       )}
 
-      {/* Progression — Patient Flow models with >1 LOT */}
       {model.modelType === "Patient Flow" && (model.linesOfTherapy ?? 1) > 1 && (
         <AssumptionSection
           title="Progression Rates"
-          subtitle={`Proportion of patients advancing to next line · ${model.linesOfTherapy ?? 1}L`}
-          icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M17.25 8.25L21 12m0 0l-3.75 3.75M21 12H3"/></svg>}
+          subtitle={`% of patients progressing to next line · ${
+            Array.from({ length: (model.linesOfTherapy ?? 1) - 1 }, (_, i) => `${i + 1}L→${i + 2}L`).join(", ")
+          } · ${model.segments ?? 1} segment${(model.segments ?? 1) > 1 ? "s" : ""}`}
+          icon={
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5L7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5" />
+            </svg>
+          }
         >
           <ProgressionAssumptions model={model} visibleKeys={visibleKeys} />
         </AssumptionSection>
       )}
 
-      {/* Operational assumptions */}
       <AssumptionSection
         title="Operational Assumptions"
-        subtitle={`Compliance · Access · Abandonment · Vials · Price · GTN${model.enableIRA||model.ira?" · IRA":""}${model.enablePTRS||model.ptrs?" · PTRS":""} · key product only`}
+        subtitle={`Compliance · Access · Abandonment · Vials · Price · GTN${model.applyIRA?" · IRA":""}${model.applyPTRS?" · PTRS":""} · key product only`}
         icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6a7.5 7.5 0 107.5 7.5h-7.5V6z"/><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 10.5H21A7.5 7.5 0 0013.5 3v7.5z"/></svg>}
       >
         <OperationalAssumptions model={model} visibleKeys={visibleKeys} />
       </AssumptionSection>
+
+      {(model.showRestOfEurope || model.showRestOfWorld) && (
+        <AssumptionSection
+          title="Rest of Europe & Rest of World Scaling"
+          subtitle="NPS and revenue multipliers applied to EU5 (RoE) and US (RoW)"
+          icon={
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
+            </svg>
+          }
+        >
+          <RoeRowAssumptions model={model} />
+        </AssumptionSection>
+      )}
     </div>
   );
 }
@@ -345,34 +364,18 @@ function AssumptionSection({ title, subtitle, icon, locked, defaultOpen, childre
           <div>
             <p className="text-slate-200 text-sm font-medium flex items-center gap-2">
               {title}
-              {locked && <span className="text-slate-600 text-xs font-normal">(coming soon)</span>}
+              {locked && <span className="text-slate-500 text-xs font-normal">(coming soon)</span>}
             </p>
-            <p className="text-slate-500 text-xs">{subtitle}</p>
+            <p className="text-slate-300 text-xs">{subtitle}</p>
           </div>
         </div>
         {!locked && (
-          <svg className={`w-4 h-4 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className={`w-4 h-4 text-slate-300 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
           </svg>
         )}
       </button>
       {open && <div className="border-t border-slate-800">{children}</div>}
-    </div>
-  );
-}
-
-function PlaceholderTab({ label, description }) {
-  return (
-    <div className="bg-slate-900 border border-dashed border-slate-700 rounded-2xl flex flex-col items-center justify-center py-28 gap-4">
-      <div className="w-12 h-12 rounded-xl bg-violet-600/10 border border-violet-500/20 flex items-center justify-center text-violet-400">
-        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-        </svg>
-      </div>
-      <div className="text-center">
-        <p className="text-slate-300 font-semibold">{label}</p>
-        <p className="text-slate-500 text-sm mt-1 max-w-md">{description}</p>
-      </div>
     </div>
   );
 }

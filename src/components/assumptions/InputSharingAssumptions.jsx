@@ -118,7 +118,7 @@ export default function InputSharingAssumptions({ model }) {
         </p>
         <div className="flex items-center gap-3 shrink-0">
           <span className="text-xs">
-            {dirty ? <span className="text-amber-500">Unsaved</span> : savedAt ? <span className="text-slate-600">Saved {savedAt}</span> : null}
+            {dirty ? <span className="text-amber-500">Unsaved</span> : savedAt ? <span className="text-slate-400">Saved {savedAt}</span> : null}
           </span>
           <button onClick={handleSave} disabled={saving || !dirty}
             className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
@@ -134,7 +134,7 @@ export default function InputSharingAssumptions({ model }) {
       {/* Group list + editor */}
       <div className="px-5 py-4 space-y-3">
         {groups.length === 0 && !editing && (
-          <p className="text-slate-600 text-sm text-center py-8">No sharing groups yet — create one to link combinations together.</p>
+          <p className="text-slate-400 text-sm text-center py-8">No sharing groups yet — create one to link combinations together.</p>
         )}
 
         {groups.map((g, gi) => (
@@ -206,7 +206,7 @@ function GroupCard({ group, color, combos, cols, onEdit, onDelete }) {
       <div className="flex items-center gap-3 px-4 py-3 bg-slate-800/50">
         <div className="w-3 h-3 rounded-full shrink-0" style={{ background: color }} />
         <span className="text-slate-200 text-sm font-medium flex-1">{group.label}</span>
-        <span className="text-slate-600 text-xs">
+        <span className="text-slate-400 text-xs">
           {group.combos.length} combination{group.combos.length !== 1 ? "s" : ""} · {group.assumptions.length} assumption{group.assumptions.length !== 1 ? "s" : ""}
         </span>
         <button onClick={onEdit}
@@ -218,7 +218,7 @@ function GroupCard({ group, color, combos, cols, onEdit, onDelete }) {
           </svg>
         </button>
         <button onClick={onDelete}
-          className="p-1 text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"
+          className="p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"
           title="Delete group"
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -363,13 +363,13 @@ function EditPanel({ draft, combos, cols, color, onLabelChange, onToggleCombo, o
                   {dim.sel.size !== dim.values.length && (
                     <button
                       onClick={() => toggleAll(dim.set, dim.values)}
-                      className="px-2 py-0.5 rounded text-xs text-slate-700 hover:text-slate-400 transition-colors"
+                      className="px-2 py-0.5 rounded text-xs text-slate-400 hover:text-white transition-colors"
                     >All</button>
                   )}
                   {dim.sel.size > 0 && dim.sel.size === dim.values.length && dim.values.length > 1 && (
                     <button
                       onClick={() => clearAll(dim.set)}
-                      className="px-2 py-0.5 rounded text-xs text-slate-700 hover:text-slate-400 transition-colors"
+                      className="px-2 py-0.5 rounded text-xs text-slate-400 hover:text-white transition-colors"
                     >Clear</button>
                   )}
                 </div>
@@ -387,15 +387,15 @@ function EditPanel({ draft, combos, cols, color, onLabelChange, onToggleCombo, o
                 <button onClick={addFiltered} disabled={filteredCombos.length === 0}
                   className="text-xs text-violet-400 hover:text-violet-300 disabled:opacity-30 transition-colors"
                 >+ Add all</button>
-                <span className="text-slate-700">·</span>
+                <span className="text-slate-500">·</span>
                 <button onClick={removeFiltered} disabled={filteredCombos.length === 0}
-                  className="text-xs text-slate-600 hover:text-slate-400 disabled:opacity-30 transition-colors"
+                  className="text-xs text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors"
                 >− Remove all</button>
               </div>
             </div>
             <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
               {filteredCombos.length === 0 && (
-                <p className="text-slate-700 text-xs">No combinations match the selected filters.</p>
+                <p className="text-slate-400 text-xs">No combinations match the selected filters.</p>
               )}
               {filteredCombos.map(c => {
                 const checked   = draft.combos.includes(c.key);
@@ -408,7 +408,7 @@ function EditPanel({ draft, combos, cols, color, onLabelChange, onToggleCombo, o
                     <span className={`text-xs flex-1 leading-tight transition-colors ${checked ? "text-slate-200" : "text-slate-500 group-hover:text-slate-300"}`}>
                       {c.label}
                     </span>
-                    {isPrimary && <span className="text-slate-600 text-xs shrink-0">primary</span>}
+                    {isPrimary && <span className="text-slate-400 text-xs shrink-0">primary</span>}
                   </label>
                 );
               })}
@@ -421,7 +421,7 @@ function EditPanel({ draft, combos, cols, color, onLabelChange, onToggleCombo, o
               <div className="flex items-center justify-between mb-1">
                 <span className="text-slate-500 text-xs font-medium">Selected ({draft.combos.length})</span>
                 <button onClick={() => [...draft.combos].forEach(k => onToggleCombo(k))}
-                  className="text-slate-700 hover:text-slate-400 text-xs transition-colors"
+                  className="text-slate-400 hover:text-white text-xs transition-colors"
                 >Clear all</button>
               </div>
               <div className="flex flex-wrap gap-1">
@@ -434,7 +434,7 @@ function EditPanel({ draft, combos, cols, color, onLabelChange, onToggleCombo, o
                     >
                       {isPrimary && <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>}
                       {c.label}
-                      <button onClick={() => onToggleCombo(k)} className="ml-0.5 text-slate-600 hover:text-slate-300">×</button>
+                      <button onClick={() => onToggleCombo(k)} className="ml-0.5 text-slate-400 hover:text-white">×</button>
                     </span>
                   ) : null;
                 })}
@@ -448,7 +448,7 @@ function EditPanel({ draft, combos, cols, color, onLabelChange, onToggleCombo, o
           <div className="flex items-center justify-between mb-3">
             <p className="text-slate-400 text-xs font-medium">Applies to assumptions</p>
             <button onClick={() => onSetAllAssumptions(!allSelected)}
-              className="text-slate-600 hover:text-slate-300 text-xs transition-colors"
+              className="text-slate-400 hover:text-white text-xs transition-colors"
             >
               {allSelected ? "Clear all" : "Select all"}
             </button>
@@ -463,7 +463,7 @@ function EditPanel({ draft, combos, cols, color, onLabelChange, onToggleCombo, o
                   />
                   <span className={`text-xs flex-1 transition-colors ${checked ? "text-slate-200" : "text-slate-500 group-hover:text-slate-300"}`}>
                     {col.label}
-                    {col.assetOnly && <span className="text-slate-700 ml-1">(asset)</span>}
+                    {col.assetOnly && <span className="text-slate-400 ml-1">(asset)</span>}
                   </span>
                 </label>
               );
@@ -474,7 +474,7 @@ function EditPanel({ draft, combos, cols, color, onLabelChange, onToggleCombo, o
 
       {/* Footer */}
       <div className="flex items-center justify-between px-4 py-3 border-t border-slate-800 bg-slate-900/60">
-        <p className="text-slate-600 text-xs">First selected combination is the editable primary; all others mirror its values.</p>
+        <p className="text-slate-400 text-xs">First selected combination is the editable primary; all others mirror its values.</p>
         <div className="flex items-center gap-2">
           <button onClick={onCancel} className="px-3 py-1.5 rounded-lg text-xs text-slate-500 hover:text-slate-200 transition-colors">
             Cancel

@@ -134,10 +134,10 @@ export function ComboFilter({ combos, onChange }) {
                   );
                 })}
                 {!allOn && (
-                  <button onClick={() => setAll(dim, values)} className="px-2 py-0.5 text-xs text-slate-600 hover:text-slate-400 transition-colors">All</button>
+                  <button onClick={() => setAll(dim, values)} className="px-2 py-0.5 text-xs text-slate-400 hover:text-white transition-colors">All</button>
                 )}
                 {allOn && values.length > 1 && (
-                  <button onClick={() => setAll(dim, [])} className="px-2 py-0.5 text-xs text-slate-600 hover:text-slate-400 transition-colors">Clear</button>
+                  <button onClick={() => setAll(dim, [])} className="px-2 py-0.5 text-xs text-slate-400 hover:text-white transition-colors">Clear</button>
                 )}
               </div>
             </div>
@@ -283,7 +283,7 @@ export function flowToMonthly(yearlyVals, startYear, n) {
   for (let y = startYear; y < startYear + n; y++) {
     const v = parseFloat(yearlyVals[String(y)]);
     for (let m = 1; m <= 12; m++)
-      out[`${y}-${String(m).padStart(2,"00")}`] = isNaN(v) ? "" : Math.round(v / 12);
+      out[`${y}-${String(m).padStart(2,"0")}`] = isNaN(v) ? "" : Math.round(v / 12);
   }
   return out;
 }
@@ -396,7 +396,7 @@ function TableRow({ row, ri, keys, editable, showPct, onCell }) {
                   value={display}
                   onChange={e => onCell(ri, k, e.target.value)}
                   placeholder="—"
-                  className={`w-full h-full ${showPct ? "pl-2 pr-5" : "px-2"} py-1.5 text-right tabular-nums text-slate-100 text-xs bg-transparent border border-transparent rounded hover:border-slate-500 focus:border-violet-500 focus:bg-white focus:outline-none transition-colors placeholder-slate-500`}
+                  className={`w-full h-full py-1.5 text-right tabular-nums text-slate-100 text-xs bg-transparent border border-transparent rounded hover:border-slate-500 focus:border-violet-500 focus:bg-white focus:outline-none transition-colors placeholder-slate-500 ${showPct ? "pl-2 pr-5" : "px-2"}`}
                 />
                 {showPct && <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs pointer-events-none select-none">%</span>}
               </div>
@@ -510,7 +510,6 @@ export function DirectEntryPanel({
   onSave,
   sharingGroups,      // optional: { [comboKey]: groupId } — dependents are read-only
   visibleKeys,        // optional Set<comboKey> — if provided, only show those combos
-  proposalCombos,     // optional: AI proposal { [comboKey]: { input: {year: val}, computed: {...} } }
 }) {
   const modelLevel   = (model.granularity ?? "Yearly").toLowerCase();
   const isMonthlyModel = modelLevel === "monthly";
@@ -522,37 +521,17 @@ export function DirectEntryPanel({
   const [inputLevel, setInputLevel] = useState(savedValues?.inputLevel ?? modelLevel);
   const [values, setValues] = useState(() => {
     const sv = savedValues?.combos ?? {};
-    // Saved combos are { input: {year: val}, computed: {...} } — extract the input layer
     return Object.fromEntries(combos.map(c => {
-      const raw = sv[c.key] ?? {};
-      return [c.key, raw.input ?? raw];
+      const raw = sv[c.key];
+      if (!raw) return [c.key, {}];
+      // Saved data is {input: {period: val}, computed: {...}} — extract just the period values
+      const flat = raw.input !== undefined ? raw.input : raw;
+      return [c.key, flat ?? {}];
     }));
   });
-
   const [saving, setSaving]       = useState(false);
   const [savedAt, setSavedAt]     = useState(null);
   const [dirty, setDirty]         = useState(false);
-  const [saveError, setSaveError] = useState(null);
-
-  // Sync values when an AI proposal arrives (proposalCombos reference changes)
-  useEffect(() => {
-    if (!proposalCombos) return;
-    setValues(prev => {
-      const next = { ...prev };
-      for (const c of combos) {
-        const comboData = proposalCombos[c.key];
-        if (comboData !== undefined) {
-          // Proposal may be { input: {...}, computed: {...} } or a flat year map
-          next[c.key] = comboData.input ?? comboData;
-        }
-      }
-      return next;
-    });
-    setInputLevel("yearly");
-    setDirty(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proposalCombos]);
-
   const fileInputRef               = useRef(null);
   const [uploadMsg, setUploadMsg] = useState(null);
 
@@ -594,6 +573,8 @@ export function DirectEntryPanel({
     return convertValues(v, modelLevel, inputLevel, model.startYear, model.timelineYears, conversionType);
   }
 
+  const [saveError, setSaveError] = useState(null);
+
   async function handleSave() {
     setSaving(true);
     setSaveError(null);
@@ -612,8 +593,8 @@ export function DirectEntryPanel({
       await onSave({ inputLevel, combos: combosPayload });
       setDirty(false);
       setSavedAt(new Date().toLocaleTimeString());
-    } catch (err) {
-      setSaveError(err?.message ?? "Save failed");
+    } catch (e) {
+      setSaveError(e?.message ?? "Save failed — is the backend running?");
     } finally {
       setSaving(false);
     }
@@ -728,7 +709,7 @@ export function DirectEntryPanel({
           />
           {uploadMsg && <span className={`text-xs ${uploadMsg.type==="success"?"text-emerald-400":"text-red-400"}`}>{uploadMsg.text}</span>}
           {saveError && <span className="text-xs text-red-400">{saveError}</span>}
-          <span className="text-xs">{dirty?<span className="text-amber-500">Unsaved</span>:savedAt?<span className="text-slate-600">Saved {savedAt}</span>:null}</span>
+          <span className="text-xs">{dirty?<span className="text-amber-500">Unsaved</span>:savedAt?<span className="text-slate-400">Saved {savedAt}</span>:null}</span>
           <button onClick={handleSave} disabled={saving||!dirty}
             className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
           >
