@@ -4,7 +4,7 @@ const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const { fetchEpiData, parseScenarioIntent, classifyIntent, answerGeneral } = require("./gemini");
-const connect = require("./db/mongodb");
+const { connect, getStatus, getDb } = require("./db/mongodb");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
