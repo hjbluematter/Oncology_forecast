@@ -82,14 +82,41 @@ Return ONLY valid JSON — no markdown fences, no commentary.`;
                             ASCO/ESMO systemic therapy eligibility guidelines
 • LOT flow rates         → Published RWE studies, IQVIA treatment patterns, SEER-Medicare linked data`;
 
+  const geoList = (model.geographies || ["Global"]);
+  const yearList = Array.from({ length: model.timelineYears || 5 }, (_, i) => startYear + i).join(", ");
+
   const userPrompt = `Search for epidemiology and funnel-cut data for "${indication}" in these geographies: ${geographies}.
 Forecast period: ${startYear}–${endYear}. Model: ${lots}L, ${segs} segment(s). Epi type: ${epiType}. ${epiNote}
 ${funnelBlock}${sourceGuide}
 
-For EACH data point found:
-1. Record the EXACT raw value as stated in the source (e.g. "76,739 new cases in 2024")
+═══ FOUR-STEP CALCULATION METHODOLOGY ═══
+
+STEP 1 — Find the epidemiology RATE from trusted sources
+  • Find the age-standardized or crude ${epiType.toLowerCase()} RATE (per 100,000/yr) for each geography.
+  • Do NOT use the absolute count as the final number — derive the per-100K rate so it can be multiplied by population each year.
+  • Source: SEER, GLOBOCAN, national cancer registries, WHO.
+
+STEP 2 — Document indication-specific adjustments
+  • If the source reports a BROADER disease category than the model indication, document each filter applied to get to the specific population. For example:
+      - If source = total lung cancer but model = NSCLC: apply NSCLC fraction (~85%), cite source
+      - If model = metastatic only: apply stage IV fraction, cite source
+  • Show the derived FINAL rate per 100K for the model-specific indication.
+  • This derivation must appear in the "derivation" object below.
+
+STEP 3 — Find UN World Population Prospects data for EACH year
+  • Source: UN World Population Prospects 2024 (https://population.un.org/wpp/)
+  • For EACH geography, find the projected total population (medium scenario) for each year: ${yearList}
+  • Return these in "population_by_year".
+
+STEP 4 — Compute patients per year
+  • For EACH geography and EACH year: patients = (final_rate_per_100K / 100,000) × projected_population
+  • Round to nearest integer. This is what goes into "combos".
+  • Do NOT use a flat CAGR — use actual UN population projections for year-by-year variation.
+
+For EACH sourcing row:
+1. Record the EXACT raw value as stated in the source (e.g. "226,033 new cases in 2022")
 2. Record the BASE POPULATION used as denominator (e.g. "335,000,000 US population 2024")
-3. Compute RATE: incidence/prevalence → (raw ÷ base) × 100,000; percentages → value as 0–100
+3. Compute RATE: incidence → (raw ÷ base) × 100,000; percentages → value as 0–100
 4. Record the FULL source URL (https://…)
 5. Quote the EXACT 1–2 sentences from the source containing the number
 
@@ -100,7 +127,7 @@ Return ONLY this JSON (no markdown fences):
       "rate_type": "<use exact funnel cut label from model if applicable, else standard name>",
       "geography": "<exact geography name matching model>",
       "retrieved_value": "<exact raw value as stated in source>",
-      "base_population": "<denominator used, e.g. '335M US population (2024)'>",
+      "base_population": "<denominator used>",
       "calculated_rate": <number — incidence: per 100K/yr; percentages: 0–100>,
       "unit": "<per 100K/yr | % | ratio>",
       "source_url": "<full https URL or null>",
@@ -108,22 +135,46 @@ Return ONLY this JSON (no markdown fences):
     }
   ],
   "combos": {
-    "<geoIdx-lotIdx>": { "<year>": <integer_absolute_patient_count> }
+    "<geoIdx-lotIdx>": { "<year>": <integer — patients = final_rate/100K × UN_population_that_year> }
+  },
+  "population_by_year": {
+    "<exact geography name>": { "<year>": <integer UN projected population> }
+  },
+  "derivation": {
+    "<exact geography name>": {
+      "steps": [
+        {
+          "step": <integer>,
+          "label": "<descriptive label, e.g. 'Raw Lung Cancer Incidence'>",
+          "role": "<'anchor' | 'filter' | 'epi_base'>",
+          "retrieved_value": "<exact value from source, e.g. '226,033 new cases in 2022'>",
+          "operator": "<'multiply' | 'divide' | null — null for anchor and epi_base>",
+          "rate": <number — adjustment percentage for filters (0–100), or per-100K rate for anchor>,
+          "rate_unit": "<'per 100K/yr' | '%'>",
+          "output_absolute": <integer — running patient count after this step, using base year population>,
+          "source_url": "<full https URL or null>",
+          "source_context": "<1–2 exact sentences, or null>"
+        }
+      ],
+      "final_rate_per_100k": <number — the rate applied to UN populations each year>,
+      "population_source": "UN World Population Prospects 2024 (population.un.org/wpp)",
+      "patients_by_year": { "<year>": <integer> }
+    }
   },
   "funnelCuts": {
-    "<exact funnel cut label from model>": <rate_value — percentage cuts: 0-100, absolute cuts: integer patient count>
+    "<exact funnel cut label from model>": <rate_value — percentage cuts: 0–100>
   },
   "source": "<1-sentence summary of main sources used>",
-  "methodology": "<1–2 sentences: how rates were converted to absolute patient counts and projected>"
+  "methodology": "<2–3 sentences: rate derivation, UN population source, and how patients were computed per year>"
 }
 
 Combo keys (geoIdx-lotIdx):
 ${comboKeyMap}
 
-For combos: absolute patients = ${epiType.toLowerCase()} rate × geography population.
-Project ${startYear}–${endYear} using published CAGR or 1–3%/yr trend. ${lotNote}
+${lotNote}
 Provide at least one sourcing row per geography and one row per funnel cut in the rows array.
-For funnelCuts: return a single best-estimate value per cut (the rate that best applies across all geographies, or a weighted average if geo-specific values were found).`;
+For funnelCuts: return a single best-estimate value per cut (weighted average across geographies if geo-specific values differ).
+The derivation object must have one entry per geography in: ${geoList.join(", ")}.`;
 
   try {
     const model_ai = genai.getGenerativeModel({

@@ -261,13 +261,200 @@ function MessageBubble({ msg, model, onApplyEpi, onApplyFunnel, onSourcesSaved, 
   return null;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function hasExistingEpiData(model) {
+  const combos = model.epiAssumptions?.combos ?? {};
+  return Object.values(combos).some(c => {
+    const vals = c.input ?? c;
+    return Object.values(vals ?? {}).some(v => v !== "" && v != null && v !== 0);
+  });
+}
+
+function hasExistingFunnelData(model) {
+  const fcv = model.funnelCutValues ?? {};
+  return Object.values(fcv).some(cut => {
+    const combos = cut.combos ?? {};
+    return Object.values(combos).some(c => {
+      const vals = c.input ?? c;
+      return Object.values(vals ?? {}).some(v => v !== "" && v != null && v !== 0);
+    });
+  });
+}
+
+// ─── Override warning modal ───────────────────────────────────────────────────
+
+function OverrideWarningModal({ target, onConfirm, onCancel }) {
+  const label = target === "epi" ? "Epi Assumptions" : target === "funnel" ? "Funnel Cut Assumptions" : "Epi & Funnel Assumptions";
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-5 w-full max-w-sm mx-4 shadow-2xl">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-slate-100 text-sm font-semibold">Override existing values?</p>
+            <p className="text-slate-400 text-xs mt-1">
+              <span className="text-amber-400 font-medium">{label}</span> already has saved inputs.
+              Applying AI-retrieved values will overwrite them. This cannot be undone until you manually re-enter the old values.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onCancel}
+            className="flex-1 px-3 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 text-xs font-medium transition-colors">
+            Cancel
+          </button>
+          <button onClick={onConfirm}
+            className="flex-1 px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium transition-colors">
+            Override &amp; Apply
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Derivation chain display ─────────────────────────────────────────────────
+
+function DerivationSection({ derivation, populationByYear, epiCombos, years, geos, lots }) {
+  const [activeGeo, setActiveGeo] = useState(geos[0]);
+  if (!derivation || Object.keys(derivation).length === 0) return null;
+
+  const geoData = derivation[activeGeo];
+  if (!geoData) return null;
+
+  const steps = geoData.steps ?? [];
+  const popByYear = populationByYear?.[activeGeo] ?? {};
+  const patsByYear = geoData.patients_by_year ?? {};
+  const finalRate = geoData.final_rate_per_100k;
+
+  const ROLE_STYLE = {
+    anchor:   { dot: "bg-slate-400", label: "text-slate-300", badge: "bg-slate-700 text-slate-400" },
+    filter:   { dot: "bg-amber-400",  label: "text-amber-300",  badge: "bg-amber-500/10 text-amber-400 border border-amber-500/20" },
+    epi_base: { dot: "bg-violet-400", label: "text-violet-300", badge: "bg-violet-500/10 text-violet-400 border border-violet-500/20" },
+  };
+
+  return (
+    <div className="border-b border-slate-700/40">
+      {/* Section header */}
+      <div className="px-3 py-1.5 bg-slate-800/40 flex items-center justify-between">
+        <span className="text-slate-300 text-xs font-medium">Calculation Derivation</span>
+        {geos.length > 1 && (
+          <div className="flex gap-1">
+            {geos.map(g => (
+              <button key={g} onClick={() => setActiveGeo(g)}
+                className={`px-2 py-0.5 rounded text-xs transition-colors ${activeGeo === g ? "bg-violet-600 text-white" : "text-slate-500 hover:text-slate-300"}`}>
+                {g}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Step chain */}
+      <div className="px-3 py-2 space-y-1.5">
+        {steps.map((step, i) => {
+          const style = ROLE_STYLE[step.role] ?? ROLE_STYLE.anchor;
+          const isLast = i === steps.length - 1;
+          return (
+            <div key={i} className="flex items-start gap-2">
+              {/* Connector */}
+              <div className="flex flex-col items-center shrink-0 mt-1">
+                <div className={`w-2 h-2 rounded-full ${style.dot}`} />
+                {!isLast && <div className="w-px flex-1 bg-slate-700 mt-1 min-h-[12px]" />}
+              </div>
+              <div className="flex-1 min-w-0 pb-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className={`text-xs font-medium ${style.label}`}>{step.label}</span>
+                  {step.role === "epi_base" && (
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${style.badge}`}>Epi Base ↑</span>
+                  )}
+                  {step.role === "filter" && step.operator && (
+                    <span className={`text-xs px-1.5 py-0.5 rounded font-mono ${style.badge}`}>
+                      × {Number(step.rate).toFixed(1)}{step.rate_unit === "%" ? "%" : ""}
+                    </span>
+                  )}
+                </div>
+                {step.retrieved_value && (
+                  <p className="text-slate-500 text-xs mt-0.5 truncate" title={step.retrieved_value}>
+                    {step.retrieved_value}
+                  </p>
+                )}
+                <div className="flex items-center gap-2 mt-0.5">
+                  {step.output_absolute != null && (
+                    <span className="text-slate-300 text-xs tabular-nums font-medium">
+                      → {Number(step.output_absolute).toLocaleString()} patients
+                    </span>
+                  )}
+                  {step.source_url && (
+                    <a href={step.source_url} target="_blank" rel="noopener noreferrer"
+                      className="text-violet-400 hover:text-violet-300 text-xs underline underline-offset-1">src</a>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Rate × Population table */}
+      {finalRate != null && years.length > 0 && (
+        <div className="mx-3 mb-2 rounded-lg overflow-hidden border border-slate-700/50">
+          <div className="px-2 py-1 bg-slate-800/60 text-slate-400 text-xs font-medium">
+            {finalRate.toFixed(2)}/100K × UN Population → Patients per Year
+            {geoData.population_source && (
+              <span className="ml-1.5 text-slate-600 font-normal">({geoData.population_source})</span>
+            )}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-800/40">
+                  <th className="px-2 py-1 text-left text-slate-500 font-medium whitespace-nowrap">Year</th>
+                  <th className="px-2 py-1 text-right text-slate-500 font-medium whitespace-nowrap">Population</th>
+                  <th className="px-2 py-1 text-right text-slate-500 font-medium whitespace-nowrap">Rate/100K</th>
+                  <th className="px-2 py-1 text-right text-slate-500 font-medium whitespace-nowrap">= Patients</th>
+                </tr>
+              </thead>
+              <tbody>
+                {years.map(y => {
+                  const pop = popByYear[y];
+                  const pts = patsByYear[y];
+                  return (
+                    <tr key={y} className="border-t border-slate-700/30">
+                      <td className="px-2 py-1 text-slate-400">{y}</td>
+                      <td className="px-2 py-1 text-right text-slate-400 tabular-nums">
+                        {pop != null ? Number(pop).toLocaleString() : "—"}
+                      </td>
+                      <td className="px-2 py-1 text-right text-slate-400 tabular-nums">{finalRate.toFixed(2)}</td>
+                      <td className="px-2 py-1 text-right text-emerald-400 tabular-nums font-semibold">
+                        {pts != null ? Number(pts).toLocaleString() : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Epi proposal card ────────────────────────────────────────────────────────
 
 function EpiProposalCard({ data, model, onApplyEpi, onApplyFunnel, onSourcesSaved }) {
   const [appliedEpi, setAppliedEpi] = useState(false);
   const [appliedFunnel, setAppliedFunnel] = useState(false);
-  const [sourcingOpen, setSourcingOpen] = useState(true);
+  const [sourcingOpen, setSourcingOpen] = useState(false);
+  const [derivationOpen, setDerivationOpen] = useState(true);
   const [expandedCtx, setExpandedCtx] = useState(null);
+  const [overrideWarning, setOverrideWarning] = useState(null); // null | "epi" | "funnel"
   if (!data) return null;
 
   const startYear = model.startYear || 2025;
@@ -278,24 +465,16 @@ function EpiProposalCard({ data, model, onApplyEpi, onApplyFunnel, onSourcesSave
   const numProds = 1 + (model.competitors || 0);
 
   const sourcingRows = data.rows ?? [];
-  const epiCombos = data.combos ?? {};         // keyed "geoIdx-lotIdx"
-  const funnelCutsData = data.funnelCuts ?? {}; // keyed by cut label
-
-  // Preview: one row per geo+LOT
-  const comboPreviewRows = [];
-  for (let g = 0; g < geos.length; g++) {
-    for (let l = 0; l < lots; l++) {
-      const key = `${g}-${l}`;
-      const vals = epiCombos[key] ?? {};
-      comboPreviewRows.push({ key, label: `${geos[g]} / ${l + 1}L`, vals });
-    }
-  }
+  const epiCombos = data.combos ?? {};
+  const funnelCutsData = data.funnelCuts ?? {};
+  const derivation = data.derivation ?? {};
+  const populationByYear = data.population_by_year ?? {};
 
   const hasFunnelCuts = Object.keys(funnelCutsData).length > 0;
-  const hasEpiCombos = comboPreviewRows.some(r => Object.keys(r.vals).length > 0);
+  const hasEpiCombos = Object.values(epiCombos).some(v => Object.keys(v).length > 0);
+  const hasDerivation = Object.keys(derivation).length > 0;
 
-  function handleApplyEpi() {
-    // Expand 2-part geo+LOT key to ALL geo+LOT+seg+product combos with same value
+  function doApplyEpi() {
     const combosPayload = {};
     for (let g = 0; g < geos.length; g++) {
       for (let l = 0; l < lots; l++) {
@@ -308,13 +487,11 @@ function EpiProposalCard({ data, model, onApplyEpi, onApplyFunnel, onSourcesSave
       }
     }
     onApplyEpi?.({ inputLevel: "yearly", combos: combosPayload, _source: data.source });
-    // Persist sourcing rows
     if (sourcingRows.length > 0) onSourcesSaved?.(sourcingRows);
     setAppliedEpi(true);
   }
 
-  function handleApplyFunnel() {
-    // Build proposal: same rate value across ALL combos for each funnel cut
+  function doApplyFunnel() {
     const funnelProposal = {};
     for (const [label, rate] of Object.entries(funnelCutsData)) {
       const yearVals = Object.fromEntries(years.map(y => [y, String(rate)]));
@@ -335,185 +512,197 @@ function EpiProposalCard({ data, model, onApplyEpi, onApplyFunnel, onSourcesSave
     setAppliedFunnel(true);
   }
 
+  function handleApplyEpi() {
+    if (hasExistingEpiData(model)) { setOverrideWarning("epi"); return; }
+    doApplyEpi();
+  }
+
+  function handleApplyFunnel() {
+    if (hasExistingFunnelData(model)) { setOverrideWarning("funnel"); return; }
+    doApplyFunnel();
+  }
+
+  function confirmOverride() {
+    const target = overrideWarning;
+    setOverrideWarning(null);
+    if (target === "epi") doApplyEpi();
+    if (target === "funnel") doApplyFunnel();
+  }
+
   const RATE_COLORS = {
-    "Incidence": "text-violet-300",
-    "Prevalence": "text-violet-300",
-    "Diagnosis Rate": "text-blue-300",
-    "Biomarker Testing Rate": "text-cyan-300",
-    "Biomarker Positivity Rate": "text-teal-300",
-    "Treatment Eligibility 1L": "text-emerald-300",
-    "LOT 1L→2L Flow": "text-amber-300",
-    "LOT 2L→3L Flow": "text-orange-300",
+    "Incidence": "text-violet-300", "Prevalence": "text-violet-300",
+    "Diagnosis Rate": "text-blue-300", "Biomarker Testing Rate": "text-cyan-300",
+    "Biomarker Positivity Rate": "text-teal-300", "Treatment Eligibility 1L": "text-emerald-300",
+    "LOT 1L→2L Flow": "text-amber-300", "LOT 2L→3L Flow": "text-orange-300",
   };
 
   return (
-    <div className="bg-slate-800/60 border border-violet-500/20 rounded-2xl rounded-tl-sm overflow-hidden">
-      {/* Header */}
-      <div className="px-3 py-2.5 border-b border-slate-700/60">
-        <p className="text-violet-300 text-xs font-medium">Epi &amp; Funnel Cut Data Retrieved</p>
-        {data.source && <p className="text-slate-500 text-xs mt-0.5">{data.source}</p>}
-      </div>
+    <>
+      {overrideWarning && (
+        <OverrideWarningModal
+          target={overrideWarning}
+          onConfirm={confirmOverride}
+          onCancel={() => setOverrideWarning(null)}
+        />
+      )}
 
-      {/* Sourcing table */}
-      {sourcingRows.length > 0 && (
-        <div className="border-b border-slate-700/40">
-          <button
-            onClick={() => setSourcingOpen(o => !o)}
-            className="w-full px-3 py-2 flex items-center justify-between text-xs text-slate-400 hover:text-slate-200 bg-slate-800/40 transition-colors"
-          >
-            <span className="font-medium text-slate-300">
-              Source Breakdown
-              <span className="ml-1.5 text-slate-500 font-normal">({sourcingRows.length} entries)</span>
-            </span>
-            <svg className={`w-3.5 h-3.5 transition-transform ${sourcingOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-            </svg>
-          </button>
-          {sourcingOpen && (
-            <div className="overflow-x-auto" style={{ maxHeight: "240px", overflowY: "auto" }}>
-              <table className="w-full text-xs border-collapse">
-                <thead className="sticky top-0 z-10">
-                  <tr className="bg-slate-800">
-                    <th className="px-2 py-1.5 text-left text-slate-400 font-medium whitespace-nowrap border-b border-slate-700">Type</th>
-                    <th className="px-2 py-1.5 text-left text-slate-400 font-medium whitespace-nowrap border-b border-slate-700">Geography</th>
-                    <th className="px-2 py-1.5 text-left text-slate-400 font-medium whitespace-nowrap border-b border-slate-700">Retrieved</th>
-                    <th className="px-2 py-1.5 text-left text-slate-400 font-medium whitespace-nowrap border-b border-slate-700">Base Pop</th>
-                    <th className="px-2 py-1.5 text-right text-slate-400 font-medium whitespace-nowrap border-b border-slate-700">Rate</th>
-                    <th className="px-2 py-1.5 text-left text-slate-400 font-medium whitespace-nowrap border-b border-slate-700">Unit</th>
-                    <th className="px-2 py-1.5 text-left text-slate-400 font-medium whitespace-nowrap border-b border-slate-700">Source</th>
-                    <th className="px-2 py-1.5 text-left text-slate-400 font-medium whitespace-nowrap border-b border-slate-700">Context</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sourcingRows.map((row, i) => (
-                    <Fragment key={i}>
-                      <tr className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors">
-                        <td className={`px-2 py-1.5 whitespace-nowrap font-medium ${RATE_COLORS[row.rate_type] || "text-slate-300"}`}>{row.rate_type}</td>
-                        <td className="px-2 py-1.5 text-slate-400 whitespace-nowrap">{row.geography}</td>
-                        <td className="px-2 py-1.5 text-slate-300 max-w-[120px]">
-                          <span className="block truncate" title={row.retrieved_value}>{row.retrieved_value}</span>
-                        </td>
-                        <td className="px-2 py-1.5 text-slate-400 whitespace-nowrap">{row.base_population || "—"}</td>
-                        <td className="px-2 py-1.5 text-right text-emerald-400 tabular-nums font-semibold">
-                          {row.calculated_rate != null ? Number(row.calculated_rate).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}
-                        </td>
-                        <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{row.unit}</td>
-                        <td className="px-2 py-1.5">
-                          {row.source_url ? (
-                            <a href={row.source_url} target="_blank" rel="noopener noreferrer"
-                              className="text-violet-400 hover:text-violet-300 underline underline-offset-2 flex items-center gap-0.5 whitespace-nowrap text-xs">
-                              Link
-                              <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                              </svg>
-                            </a>
-                          ) : <span className="text-slate-600">—</span>}
-                        </td>
-                        <td className="px-2 py-1.5">
-                          {row.source_context ? (
-                            <button onClick={() => setExpandedCtx(expandedCtx === i ? null : i)}
-                              className="text-slate-500 hover:text-slate-300 text-xs underline underline-offset-2 whitespace-nowrap transition-colors">
-                              {expandedCtx === i ? "hide" : "view"}
-                            </button>
-                          ) : <span className="text-slate-600">—</span>}
-                        </td>
-                      </tr>
-                      {expandedCtx === i && row.source_context && (
-                        <tr className="bg-slate-900/60">
-                          <td colSpan={8} className="px-3 py-2 text-slate-400 text-xs italic border-b border-slate-700/30">
-                            "{row.source_context}"
+      <div className="bg-slate-800/60 border border-violet-500/20 rounded-2xl rounded-tl-sm overflow-hidden">
+        {/* Header */}
+        <div className="px-3 py-2.5 border-b border-slate-700/60">
+          <p className="text-violet-300 text-xs font-medium">Epi &amp; Funnel Cut Data Retrieved</p>
+          {data.source && <p className="text-slate-500 text-xs mt-0.5">{data.source}</p>}
+        </div>
+
+        {/* Derivation chain — shown by default, most informative section */}
+        {hasDerivation && (
+          <div className="border-b border-slate-700/40">
+            <button
+              onClick={() => setDerivationOpen(o => !o)}
+              className="w-full px-3 py-2 flex items-center justify-between text-xs text-slate-400 hover:text-slate-200 bg-slate-800/40 transition-colors"
+            >
+              <span className="font-medium text-slate-300">
+                Calculation Derivation
+                <span className="ml-1.5 text-slate-500 font-normal">rate → UN pop × year</span>
+              </span>
+              <svg className={`w-3.5 h-3.5 transition-transform ${derivationOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+              </svg>
+            </button>
+            {derivationOpen && (
+              <DerivationSection
+                derivation={derivation}
+                populationByYear={populationByYear}
+                epiCombos={epiCombos}
+                years={years}
+                geos={geos}
+                lots={lots}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Sourcing table — collapsed by default since derivation is more useful */}
+        {sourcingRows.length > 0 && (
+          <div className="border-b border-slate-700/40">
+            <button
+              onClick={() => setSourcingOpen(o => !o)}
+              className="w-full px-3 py-2 flex items-center justify-between text-xs text-slate-400 hover:text-slate-200 bg-slate-800/40 transition-colors"
+            >
+              <span className="font-medium text-slate-300">
+                Raw Source Data
+                <span className="ml-1.5 text-slate-500 font-normal">({sourcingRows.length} entries)</span>
+              </span>
+              <svg className={`w-3.5 h-3.5 transition-transform ${sourcingOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+              </svg>
+            </button>
+            {sourcingOpen && (
+              <div className="overflow-x-auto" style={{ maxHeight: "220px", overflowY: "auto" }}>
+                <table className="w-full text-xs border-collapse">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="bg-slate-800">
+                      {["Type","Geography","Retrieved","Base Pop","Rate","Unit","Source","Context"].map(h => (
+                        <th key={h} className="px-2 py-1.5 text-left text-slate-400 font-medium whitespace-nowrap border-b border-slate-700">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sourcingRows.map((row, i) => (
+                      <Fragment key={i}>
+                        <tr className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors">
+                          <td className={`px-2 py-1.5 whitespace-nowrap font-medium ${RATE_COLORS[row.rate_type] || "text-slate-300"}`}>{row.rate_type}</td>
+                          <td className="px-2 py-1.5 text-slate-400 whitespace-nowrap">{row.geography}</td>
+                          <td className="px-2 py-1.5 text-slate-300 max-w-[120px]">
+                            <span className="block truncate" title={row.retrieved_value}>{row.retrieved_value}</span>
+                          </td>
+                          <td className="px-2 py-1.5 text-slate-400 whitespace-nowrap">{row.base_population || "—"}</td>
+                          <td className="px-2 py-1.5 text-right text-emerald-400 tabular-nums font-semibold">
+                            {row.calculated_rate != null ? Number(row.calculated_rate).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}
+                          </td>
+                          <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{row.unit}</td>
+                          <td className="px-2 py-1.5">
+                            {row.source_url ? (
+                              <a href={row.source_url} target="_blank" rel="noopener noreferrer"
+                                className="text-violet-400 hover:text-violet-300 underline underline-offset-2 flex items-center gap-0.5 whitespace-nowrap text-xs">
+                                Link <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
+                              </a>
+                            ) : <span className="text-slate-600">—</span>}
+                          </td>
+                          <td className="px-2 py-1.5">
+                            {row.source_context ? (
+                              <button onClick={() => setExpandedCtx(expandedCtx === i ? null : i)}
+                                className="text-slate-500 hover:text-slate-300 text-xs underline underline-offset-2 whitespace-nowrap transition-colors">
+                                {expandedCtx === i ? "hide" : "view"}
+                              </button>
+                            ) : <span className="text-slate-600">—</span>}
                           </td>
                         </tr>
-                      )}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
+                        {expandedCtx === i && row.source_context && (
+                          <tr className="bg-slate-900/60">
+                            <td colSpan={8} className="px-3 py-2 text-slate-400 text-xs italic border-b border-slate-700/30">
+                              "{row.source_context}"
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Funnel cuts preview */}
+        {hasFunnelCuts && (
+          <div className="border-b border-slate-700/40">
+            <p className="px-3 py-1.5 text-slate-500 text-xs bg-slate-800/30">Funnel cut rates (applied uniformly across all years)</p>
+            <div className="px-3 py-2 space-y-1">
+              {Object.entries(funnelCutsData).map(([label, rate]) => (
+                <div key={label} className="flex items-center justify-between">
+                  <span className="text-slate-300 text-xs">{label}</span>
+                  <span className="text-emerald-400 text-xs font-semibold tabular-nums">{Number(rate).toFixed(1)}%</span>
+                </div>
+              ))}
             </div>
+          </div>
+        )}
+
+        {data.methodology && (
+          <p className="px-3 py-2 text-slate-500 text-xs italic border-b border-slate-700/40">{data.methodology}</p>
+        )}
+
+        {/* Action buttons */}
+        <div className="px-3 py-2.5 space-y-2">
+          {hasEpiCombos && (
+            appliedEpi ? (
+              <p className="text-emerald-400 text-xs flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                Epi applied — review in Epidemiology section, then Save
+              </p>
+            ) : (
+              <button onClick={handleApplyEpi}
+                className="w-full py-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium rounded-lg transition-colors">
+                Apply to Epi Assumptions
+              </button>
+            )
+          )}
+          {hasFunnelCuts && (
+            appliedFunnel ? (
+              <p className="text-emerald-400 text-xs flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                Funnel cuts applied — review in Biomarker &amp; Funnel section, then Save
+              </p>
+            ) : (
+              <button onClick={handleApplyFunnel}
+                className="w-full py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-medium rounded-lg transition-colors">
+                Apply to Funnel Cut Assumptions
+              </button>
+            )
           )}
         </div>
-      )}
-
-      {/* Epi patient counts preview */}
-      {hasEpiCombos && (
-        <div className="border-b border-slate-700/40">
-          <p className="px-3 py-1.5 text-slate-500 text-xs bg-slate-800/30">
-            Patient counts per Geo / LOT (same value applied to all segments &amp; products)
-          </p>
-          <div className="overflow-x-auto" style={{ maxHeight: "160px", overflowY: "auto" }}>
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-slate-800/60">
-                  <th className="px-3 py-1.5 text-left text-slate-400 font-medium sticky left-0 bg-slate-800/60 whitespace-nowrap">Geo / LOT</th>
-                  {years.map(y => <th key={y} className="px-2 py-1.5 text-right text-slate-400 font-medium whitespace-nowrap">{y}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {comboPreviewRows.map(row => (
-                  <tr key={row.key} className="border-t border-slate-700/40">
-                    <td className="px-3 py-1.5 text-slate-300 whitespace-nowrap sticky left-0 bg-slate-800/40">{row.label}</td>
-                    {years.map(y => (
-                      <td key={y} className="px-2 py-1.5 text-right text-slate-200 tabular-nums">
-                        {row.vals?.[y] != null ? Number(row.vals[y]).toLocaleString() : "—"}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Funnel cuts preview */}
-      {hasFunnelCuts && (
-        <div className="border-b border-slate-700/40">
-          <p className="px-3 py-1.5 text-slate-500 text-xs bg-slate-800/30">Funnel cut rates (applied uniformly across all years)</p>
-          <div className="px-3 py-2 space-y-1">
-            {Object.entries(funnelCutsData).map(([label, rate]) => (
-              <div key={label} className="flex items-center justify-between">
-                <span className="text-slate-300 text-xs">{label}</span>
-                <span className="text-emerald-400 text-xs font-semibold tabular-nums">{Number(rate).toFixed(1)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {data.methodology && (
-        <p className="px-3 py-2 text-slate-500 text-xs italic border-b border-slate-700/40">{data.methodology}</p>
-      )}
-
-      {/* Action buttons */}
-      <div className="px-3 py-2.5 space-y-2">
-        {hasEpiCombos && (
-          appliedEpi ? (
-            <p className="text-emerald-400 text-xs flex items-center gap-1.5">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
-              Epi applied — review in Epidemiology section, then Save
-            </p>
-          ) : (
-            <button onClick={handleApplyEpi}
-              className="w-full py-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium rounded-lg transition-colors">
-              Apply to Epi Assumptions
-            </button>
-          )
-        )}
-        {hasFunnelCuts && (
-          appliedFunnel ? (
-            <p className="text-emerald-400 text-xs flex items-center gap-1.5">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
-              Funnel cuts applied — review in Biomarker &amp; Funnel section, then Save
-            </p>
-          ) : (
-            <button onClick={handleApplyFunnel}
-              className="w-full py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-medium rounded-lg transition-colors">
-              Apply to Funnel Cut Assumptions
-            </button>
-          )
-        )}
       </div>
-    </div>
+    </>
   );
 }
 
