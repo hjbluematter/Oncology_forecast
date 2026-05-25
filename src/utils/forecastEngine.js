@@ -43,14 +43,41 @@ function buildGeoList(model) {
 
 // ─── Value accessors ──────────────────────────────────────────────────────────
 
+/**
+ * Defensive unwrap for corrupted combo period-value dicts.
+ *
+ * Data corruption can produce two patterns:
+ *   (A) { input:{period:val}, computed:{...} } stored as the period dict
+ *       → No period-looking keys at top level; extract .input
+ *   (B) { "2026-01": val, ..., input:{old…}, computed:{old…} }
+ *       → Period keys exist alongside stale nested keys; keep only period keys
+ *
+ * Normal data { "2026": val } or { "2026-01": val } passes through unchanged.
+ */
+function unwrapPeriodDict(d) {
+  if (!d || typeof d !== "object") return {};
+  const PERIOD_RE = /^\d{4}(-\d{2})?$/;
+  const topPeriodKeys = Object.keys(d).filter(k => PERIOD_RE.test(k));
+  if (topPeriodKeys.length > 0) {
+    // Has real period keys at top level — strip any stale "input"/"computed" sub-objects
+    if (topPeriodKeys.length === Object.keys(d).length) return d; // already clean — fast path
+    const out = {};
+    for (const k of topPeriodKeys) out[k] = d[k];
+    return out;
+  }
+  // No period keys at top level — try nested .input (pattern A)
+  if (typeof d.input === "object" && d.input !== null && !Array.isArray(d.input)) return d.input;
+  return d;
+}
+
 function getPeriodVal(assumption, comboKey, period) {
   if (!assumption) return null;
   const combos = assumption.combos ?? {};
   const comboData = combos[comboKey];
   if (!comboData) return null;
-  // prefer computed (already at model granularity)
-  const computed = comboData.computed ?? {};
-  const input = comboData.input ?? {};
+  // prefer computed (already at model granularity); unwrap any accidental nesting
+  const computed = unwrapPeriodDict(comboData.computed ?? {});
+  const input    = unwrapPeriodDict(comboData.input    ?? {});
   const raw = computed[period] ?? input[period];
   if (raw === null || raw === undefined || raw === "") return null;
   const v = parseFloat(String(raw).replace(/,/g, ""));

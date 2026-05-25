@@ -24,6 +24,42 @@ function getAllComboKeys(model) {
   return keys;
 }
 
+/**
+ * Defensive unwrap for corrupted combo period-value dicts.
+ *
+ * Data corruption can produce two patterns:
+ *   (A) { input:{period:val}, computed:{...} } stored as the period dict
+ *       → No period-looking keys at top level; extract .input
+ *   (B) { "2026-01": val, ..., input:{old…}, computed:{old…} }
+ *       → Period keys exist alongside stale nested keys; keep only period keys
+ *
+ * Normal data { "2026": val } or { "2026-01": val } passes through unchanged.
+ */
+function unwrapPeriodDict(d) {
+  if (!d || typeof d !== "object") return {};
+  const PERIOD_RE = /^\d{4}(-\d{2})?$/;
+  const topPeriodKeys = Object.keys(d).filter(k => PERIOD_RE.test(k));
+  if (topPeriodKeys.length > 0) {
+    if (topPeriodKeys.length === Object.keys(d).length) return d; // already clean — fast path
+    const out = {};
+    for (const k of topPeriodKeys) out[k] = d[k];
+    return out;
+  }
+  // No period keys at top level — try nested .input
+  if (typeof d.input === "object" && d.input !== null && !Array.isArray(d.input)) return d.input;
+  return d;
+}
+
+/**
+ * Check whether a period key string belongs to any of the target years.
+ * Handles both "YYYY" (yearly) and "YYYY-MM" (monthly) formats.
+ */
+function periodInTargetYears(key, targetYearSet) {
+  if (!key || !targetYearSet) return false;
+  const yr = key.split("-")[0];
+  return targetYearSet.has(yr);
+}
+
 export function applyScenarioDelta(model, parsed, applyMode = "relative") {
   const startYear = model.startYear || 2025;
   const n = model.timelineYears || 5;
@@ -36,9 +72,13 @@ export function applyScenarioDelta(model, parsed, applyMode = "relative") {
     const sign = direction === "down" ? -1 : 1;
     const targetKeys = comboKeys === "all" ? getAllComboKeys(model)
       : (Array.isArray(comboKeys) ? comboKeys : [comboKeys]);
-    const targetYears = applyToYears === "all" || !applyToYears
-      ? years
-      : years.filter(y => applyToYears.includes(parseInt(y)));
+
+    // Build a Set of target year strings for O(1) lookup
+    const targetYearSet = new Set(
+      applyToYears === "all" || !applyToYears
+        ? years
+        : years.filter(y => applyToYears.includes(parseInt(y)))
+    );
 
     function adjustVal(v, isCount = false) {
       if (isNaN(v)) return v;
@@ -54,36 +94,59 @@ export function applyScenarioDelta(model, parsed, applyMode = "relative") {
         : Math.min(100, Math.max(0, Math.round(v * factor * 100) / 100));
     }
 
+    /**
+     * Apply adjustVal to all keys in a period-value dict that belong to targetYears.
+     * Handles both yearly ("YYYY") and monthly ("YYYY-MM") keys in the same dict.
+     * Returns a new object with modified values.
+     */
+    function applyToPeriodDict(dict, isCount = false) {
+      const out = { ...dict };
+      for (const k of Object.keys(out)) {
+        if (!periodInTargetYears(k, targetYearSet)) continue;
+        const v = parseFloat(out[k]);
+        if (!isNaN(v)) out[k] = adjustVal(v, isCount);
+      }
+      return out;
+    }
+
     if (assumptionType === "epi") {
       const base = model.epiAssumptions?.combos ?? {};
       const modified = JSON.parse(JSON.stringify(base));
       for (const ck of targetKeys) {
         if (!modified[ck]) continue;
-        for (const yr of targetYears) {
-          const v = parseFloat(modified[ck].input?.[yr]);
-          if (!isNaN(v)) modified[ck].input[yr] = adjustVal(v, true);
-          const cv = parseFloat(modified[ck].computed?.[yr]);
-          if (!isNaN(cv)) modified[ck].computed[yr] = adjustVal(cv, true);
-        }
+        const inputDict    = unwrapPeriodDict(modified[ck].input    ?? {});
+        const computedDict = unwrapPeriodDict(modified[ck].computed ?? {});
+        modified[ck].input    = applyToPeriodDict(inputDict,    true);
+        modified[ck].computed = applyToPeriodDict(computedDict, true);
       }
       snap.epiAssumptions = { ...model.epiAssumptions, combos: modified };
     }
 
-    if (assumptionType === "funnelCut" && funnelCutId) {
-      const base = model.funnelCutValues?.[funnelCutId]?.combos ?? {};
+    if (assumptionType === "funnelCut") {
+      // Support matching by funnel cut label if ID lookup fails
+      const funnelCuts = model.funnelCutValues ?? {};
+      let cutId = funnelCutId;
+      if (cutId && !funnelCuts[cutId]) {
+        // Try matching by funnel step label (case-insensitive)
+        const stepMatch = (model.epiFunnel ?? []).find(
+          s => s.label?.toLowerCase() === cutId?.toLowerCase()
+        );
+        if (stepMatch) cutId = stepMatch.id;
+      }
+      if (!cutId) continue;
+
+      const base = funnelCuts[cutId]?.combos ?? {};
       const modified = JSON.parse(JSON.stringify(base));
       for (const ck of targetKeys) {
         if (!modified[ck]) continue;
-        for (const yr of targetYears) {
-          const v = parseFloat(modified[ck].input?.[yr]);
-          if (!isNaN(v)) modified[ck].input[yr] = adjustVal(v);
-          const cv = parseFloat(modified[ck].computed?.[yr]);
-          if (!isNaN(cv)) modified[ck].computed[yr] = adjustVal(cv);
-        }
+        const inputDict    = unwrapPeriodDict(modified[ck].input    ?? {});
+        const computedDict = unwrapPeriodDict(modified[ck].computed ?? {});
+        modified[ck].input    = applyToPeriodDict(inputDict);
+        modified[ck].computed = applyToPeriodDict(computedDict);
       }
       snap.funnelCutValues = {
-        ...(snap.funnelCutValues ?? model.funnelCutValues ?? {}),
-        [funnelCutId]: { ...(model.funnelCutValues?.[funnelCutId] ?? {}), combos: modified },
+        ...(snap.funnelCutValues ?? funnelCuts),
+        [cutId]: { ...(funnelCuts[cutId] ?? {}), combos: modified },
       };
     }
 
@@ -92,10 +155,10 @@ export function applyScenarioDelta(model, parsed, applyMode = "relative") {
       const modified = JSON.parse(JSON.stringify(base));
       for (const ck of targetKeys) {
         if (!modified[ck]) continue;
-        for (const yr of targetYears) {
-          const v = parseFloat(modified[ck].input?.[yr]);
-          if (!isNaN(v)) modified[ck].input[yr] = adjustVal(v);
-        }
+        const inputDict    = unwrapPeriodDict(modified[ck].input    ?? {});
+        const computedDict = unwrapPeriodDict(modified[ck].computed ?? {});
+        modified[ck].input    = applyToPeriodDict(inputDict);
+        modified[ck].computed = applyToPeriodDict(computedDict);
       }
       snap.marketShareAssumptions = { ...model.marketShareAssumptions, combos: modified };
     }

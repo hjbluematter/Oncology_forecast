@@ -521,11 +521,26 @@ export function DirectEntryPanel({
   const [inputLevel, setInputLevel] = useState(savedValues?.inputLevel ?? modelLevel);
   const [values, setValues] = useState(() => {
     const sv = savedValues?.combos ?? {};
+    const PERIOD_RE = /^\d{4}(-\d{2})?$/;
+    function extractPeriodVals(d) {
+      if (!d || typeof d !== "object") return {};
+      // Prefer top-level period keys (YYYY or YYYY-MM) — strip stale nested sub-objects
+      const topPeriodKeys = Object.keys(d).filter(k => PERIOD_RE.test(k));
+      if (topPeriodKeys.length > 0) {
+        if (topPeriodKeys.length === Object.keys(d).length) return d; // clean — fast path
+        const out = {};
+        for (const k of topPeriodKeys) out[k] = d[k];
+        return out;
+      }
+      // No period keys at top level — try nested .input (corruption pattern A)
+      if (typeof d.input === "object" && d.input !== null && !Array.isArray(d.input)) return extractPeriodVals(d.input);
+      return d;
+    }
     return Object.fromEntries(combos.map(c => {
       const raw = sv[c.key];
       if (!raw) return [c.key, {}];
       // Saved data is {input: {period: val}, computed: {...}} — extract just the period values
-      const flat = raw.input !== undefined ? raw.input : raw;
+      const flat = raw.input !== undefined ? extractPeriodVals(raw.input) : extractPeriodVals(raw);
       return [c.key, flat ?? {}];
     }));
   });

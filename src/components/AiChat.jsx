@@ -781,7 +781,12 @@ function ScenarioCard({ parsed, model, onSaveScenario, onScenarioSaved }) {
         const baseTotalNPS = Object.values(baseResults.totalNPS ?? {}).reduce((s, v) => s + v, 0);
         const scTotalNPS   = Object.values(scResults.totalNPS ?? {}).reduce((s, v) => s + v, 0);
 
-        setForecastDelta({ baseTotalRev, scTotalRev, delta, deltaPct, baseTotalNPS, scTotalNPS });
+        // Warn if base forecast is zero — assumptions likely not filled in
+        const zeroBaseWarning = baseTotalRev === 0 && baseTotalNPS === 0
+          ? "Base forecast is $0 — fill in Epi, Market Share and Operational assumptions first, then the delta will be meaningful."
+          : null;
+
+        setForecastDelta({ baseTotalRev, scTotalRev, delta, deltaPct, baseTotalNPS, scTotalNPS, zeroBaseWarning });
         setStep("preview");
       } catch (e) {
         setRunError(e?.message ?? String(e));
@@ -886,6 +891,11 @@ function ScenarioCard({ parsed, model, onSaveScenario, onScenarioSaved }) {
       {/* Step 3 — preview output delta */}
       {step === "preview" && forecastDelta && (
         <div className="border-t border-slate-700/60">
+          {forecastDelta.zeroBaseWarning && (
+            <div className="mx-3 mt-2.5 px-2.5 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <p className="text-amber-400 text-xs leading-relaxed">{forecastDelta.zeroBaseWarning}</p>
+            </div>
+          )}
           <div className="px-3 py-2.5 grid grid-cols-2 gap-2">
             <div className="bg-slate-900/60 rounded-lg px-2.5 py-2">
               <p className="text-slate-500 text-xs">Revenue Δ (total)</p>
@@ -944,10 +954,15 @@ function ScenarioCard({ parsed, model, onSaveScenario, onScenarioSaved }) {
 
       {/* Saved confirmation */}
       {step === "saved" && (
-        <div className="px-3 py-3 border-t border-slate-700/60">
+        <div className="px-3 py-3 border-t border-slate-700/60 space-y-1.5">
           <p className="text-emerald-400 text-xs flex items-center gap-1.5">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
-            Saved as "{savedName}" — open Scenarios tab to compare vs base
+            <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+            Saved as &ldquo;{savedName}&rdquo;
+          </p>
+          <p className="text-slate-500 text-xs leading-relaxed pl-5">
+            Switch to the <span className="text-violet-400 font-medium">Scenarios tab</span> → click
+            &ldquo;{savedName}&rdquo; → <span className="text-violet-400">Compare</span> to see
+            revenue and patient count vs the base model.
           </p>
         </div>
       )}
