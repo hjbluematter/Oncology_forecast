@@ -18,6 +18,8 @@ async function withRetry(fn, retries = 3, delayMs = 3000) {
       return await fn();
     } catch (err) {
       const msg = err.message || "";
+      // RECITATION is a content policy block — not retryable
+      if (msg.includes("RECITATION")) throw err;
       const isRetryable = msg.includes("503") || msg.includes("Service Unavailable") || msg.includes("429") || msg.includes("Too Many Requests");
       if (isRetryable && i < retries - 1) {
         const wait = delayMs * (i + 1);
@@ -27,6 +29,19 @@ async function withRetry(fn, retries = 3, delayMs = 3000) {
         throw err;
       }
     }
+  }
+}
+
+// Extract text safely — handles RECITATION blocks where .text() throws
+function safeText(result) {
+  try {
+    return result.response.text().trim();
+  } catch (err) {
+    const msg = err.message || "";
+    if (msg.includes("RECITATION")) {
+      throw new Error("RECITATION: Gemini blocked the response to avoid reproducing copyrighted text. Try rephrasing the request or running it again.");
+    }
+    throw err;
   }
 }
 
@@ -114,11 +129,11 @@ STEP 4 — Compute patients per year
   • Do NOT use a flat CAGR — use actual UN population projections for year-by-year variation.
 
 For EACH sourcing row:
-1. Record the EXACT raw value as stated in the source (e.g. "226,033 new cases in 2022")
+1. Record the raw value found in the source (e.g. "226,033 new cases in 2022")
 2. Record the BASE POPULATION used as denominator (e.g. "335,000,000 US population 2024")
 3. Compute RATE: incidence → (raw ÷ base) × 100,000; percentages → value as 0–100
 4. Record the FULL source URL (https://…)
-5. Quote the EXACT 1–2 sentences from the source containing the number
+5. Paraphrase (in your own words, do NOT reproduce verbatim) the key finding from the source
 
 Return ONLY this JSON (no markdown fences):
 {
@@ -131,7 +146,7 @@ Return ONLY this JSON (no markdown fences):
       "calculated_rate": <number — incidence: per 100K/yr; percentages: 0–100>,
       "unit": "<per 100K/yr | % | ratio>",
       "source_url": "<full https URL or null>",
-      "source_context": "<1–2 exact sentences from the source>"
+      "source_context": "<1–2 sentence paraphrase of the key finding (do not reproduce verbatim)>"
     }
   ],
   "combos": {
@@ -153,7 +168,7 @@ Return ONLY this JSON (no markdown fences):
           "rate_unit": "<'per 100K/yr' | '%'>",
           "output_absolute": <integer — running patient count after this step, using base year population>,
           "source_url": "<full https URL or null>",
-          "source_context": "<1–2 exact sentences, or null>"
+          "source_context": "<1–2 sentence paraphrase of the key finding, or null>"
         }
       ],
       "final_rate_per_100k": <number — the rate applied to UN populations each year>,
@@ -188,14 +203,20 @@ The derivation object must have one entry per geography in: ${geoList.join(", ")
       generationConfig: { temperature: 0.1 },
     }));
 
-    const raw = result.response.text().trim();
+    const raw = safeText(result);
     const jsonStr = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
     const parsed = JSON.parse(jsonStr);
 
     return { ok: true, data: parsed };
   } catch (err) {
     console.error("Gemini epi fetch error:", err.message);
-    return { ok: false, error: err.message };
+    const isRecitation = (err.message || "").includes("RECITATION");
+    return {
+      ok: false,
+      error: isRecitation
+        ? "The AI response was blocked to avoid reproducing copyrighted text. Please try again — the retry usually succeeds."
+        : err.message,
+    };
   }
 }
 
@@ -293,7 +314,7 @@ Return JSON in this format:
       generationConfig: { temperature: 0.1 },
     }));
 
-    const raw = result.response.text().trim();
+    const raw = safeText(result);
     const jsonStr = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
     const parsed = JSON.parse(jsonStr);
 
@@ -352,7 +373,7 @@ Be concise and helpful. Max 3 sentences unless asked for more.`;
       contents: [{ role: "user", parts: [{ text: `${context}\n\n${message}` }] }],
       generationConfig: { temperature: 0.4 },
     }));
-    return { ok: true, text: result.response.text().trim() };
+    return { ok: true, text: safeText(result) };
   } catch (err) {
     return { ok: false, error: err.message };
   }
