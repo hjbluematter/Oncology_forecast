@@ -73,6 +73,7 @@ export default function EpiAssumptions({ model, visibleKeys, proposal, onProposa
         onSave={handleSave}
         sharingGroups={getSharingForAssumption(model, "epi")}
         visibleKeys={visibleKeys}
+        proposalCombos={proposal?.combos}
       />
     </div>
   );

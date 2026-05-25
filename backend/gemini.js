@@ -42,35 +42,88 @@ async function fetchEpiData(model) {
   const lots = model.linesOfTherapy || 1;
   const segs = model.segments || 1;
 
-  const systemPrompt = `You are an oncology market research expert. Your job is to find real epidemiology data and return it as structured JSON.
-Return ONLY valid JSON, no markdown, no explanation.`;
+  const systemPrompt = `You are an expert oncology epidemiology researcher with access to current literature.
+Your job is to find real-world epidemiology and funnel-cut rates from trusted sources and return them as structured JSON.
+Always show your derivation: raw reported value, base population used, and the calculated rate.
+Return ONLY valid JSON — no markdown fences, no commentary.`;
 
-  const comboKeyMap = buildComboKeyMap(model);
-  const lotNote = lots > 1 ? `For lines of therapy beyond 1L, apply typical waterfall rates (e.g., ~60-70% of 1L patients reach 2L).` : "";
-  const epiNote = epiType === "Incidence" ? "Incidence = new patients per year." : "Prevalence = total patient pool (point-in-time).";
+  const comboKeyMap = buildEpiComboKeyMap(model);
+  const epiNote = epiType === "Incidence"
+    ? "Incidence = newly diagnosed patients per year (flow)."
+    : "Prevalence = total living patients at a point in time (stock).";
+  const lotNote = lots > 1
+    ? `LOT waterfall: for lines beyond 1L apply published flow rates (e.g. ~60-70% of 1L patients reach 2L, ~50-60% of 2L reach 3L).`
+    : "";
 
-  const userPrompt = `Find ${epiType.toLowerCase()} data for "${indication}" in these geographies: ${geographies}.
-Forecast period: ${startYear} to ${endYear} (${endYear - startYear + 1} years).
-Model has ${lots} line(s) of therapy and ${segs} segment(s).
+  // Build the list of model-specific funnel cuts to search for
+  const funnelCuts = (model.epiFunnel || []).filter(f => !f.locked);
+  const funnelBlock = funnelCuts.length > 0
+    ? `\n═══ FUNNEL CUTS CONFIGURED IN THIS MODEL ═══\nSearch for a real-world rate for EACH of these cuts (use cut label and description to determine what to search for):\n${
+        funnelCuts.map((f, i) =>
+          `  ${i + 1}. "${f.label}"${f.description ? ` — ${f.description}` : ""}`
+        ).join("\n")
+      }\n`
+    : `\n═══ STANDARD FUNNEL CUTS TO SEARCH ═══\nSearch for: Diagnosis Rate, Biomarker Testing Rate, Biomarker Positivity Rate, Treatment Eligibility at 1L\n`;
 
-Return a JSON object in this exact format:
+  // Source guidance per cut type
+  const sourceGuide = `
+═══ TRUSTED SOURCES BY DATA TYPE ═══
+• ${epiType} rate        → SEER (seer.cancer.gov), GLOBOCAN (gco.iarc.fr), WHO ICD-O,
+                            national cancer registries, Lancet Oncology, NEJM, JCO, EJC,
+                            ASCO/ESMO annual meeting abstracts
+• Diagnosis rate         → Cancer registry completeness studies, NCCN/ESMO clinical guidelines,
+                            stage-at-diagnosis papers on PubMed (pubmed.ncbi.nlm.nih.gov)
+• Biomarker testing rate → RWE claims (IQVIA, Symphony Health), companion Dx label supplements,
+                            ASCO/ESMO platform presentations, FDA CDx approval press releases
+• Biomarker positivity   → Molecular epidemiology studies, TCGA Pan-Cancer Atlas (cancer.gov/tcga),
+                            clinical trial enrollment data, FDA label epidemiology sections,
+                            PubMed meta-analyses
+• Treatment eligibility  → ECOG PS distribution studies, real-world patient-selection papers,
+                            ASCO/ESMO systemic therapy eligibility guidelines
+• LOT flow rates         → Published RWE studies, IQVIA treatment patterns, SEER-Medicare linked data`;
+
+  const userPrompt = `Search for epidemiology and funnel-cut data for "${indication}" in these geographies: ${geographies}.
+Forecast period: ${startYear}–${endYear}. Model: ${lots}L, ${segs} segment(s). Epi type: ${epiType}. ${epiNote}
+${funnelBlock}${sourceGuide}
+
+For EACH data point found:
+1. Record the EXACT raw value as stated in the source (e.g. "76,739 new cases in 2024")
+2. Record the BASE POPULATION used as denominator (e.g. "335,000,000 US population 2024")
+3. Compute RATE: incidence/prevalence → (raw ÷ base) × 100,000; percentages → value as 0–100
+4. Record the FULL source URL (https://…)
+5. Quote the EXACT 1–2 sentences from the source containing the number
+
+Return ONLY this JSON (no markdown fences):
 {
-  "source": "brief description of data sources found",
-  "methodology": "1-2 sentences on how you derived/projected the numbers",
-  "combos": {
-    "<comboKey>": {
-      "<year>": <number>
+  "rows": [
+    {
+      "rate_type": "<use exact funnel cut label from model if applicable, else standard name>",
+      "geography": "<exact geography name matching model>",
+      "retrieved_value": "<exact raw value as stated in source>",
+      "base_population": "<denominator used, e.g. '335M US population (2024)'>",
+      "calculated_rate": <number — incidence: per 100K/yr; percentages: 0–100>,
+      "unit": "<per 100K/yr | % | ratio>",
+      "source_url": "<full https URL or null>",
+      "source_context": "<1–2 exact sentences from the source>"
     }
-  }
+  ],
+  "combos": {
+    "<geoIdx-lotIdx>": { "<year>": <integer_absolute_patient_count> }
+  },
+  "funnelCuts": {
+    "<exact funnel cut label from model>": <rate_value — percentage cuts: 0-100, absolute cuts: integer patient count>
+  },
+  "source": "<1-sentence summary of main sources used>",
+  "methodology": "<1–2 sentences: how rates were converted to absolute patient counts and projected>"
 }
 
-The model has these combinations (comboKey = "geoIdx-lotIdx-segIdx-0" for the asset):
+Combo keys (geoIdx-lotIdx):
 ${comboKeyMap}
 
-For each comboKey, provide patient counts for each year from ${startYear} to ${endYear}.
-${epiNote}
-${lotNote}
-Use realistic estimates based on published literature, clinical studies, or epidemiology databases.`;
+For combos: absolute patients = ${epiType.toLowerCase()} rate × geography population.
+Project ${startYear}–${endYear} using published CAGR or 1–3%/yr trend. ${lotNote}
+Provide at least one sourcing row per geography and one row per funnel cut in the rows array.
+For funnelCuts: return a single best-estimate value per cut (the rate that best applies across all geographies, or a weighted average if geo-specific values were found).`;
 
   try {
     const model_ai = genai.getGenerativeModel({
@@ -93,6 +146,19 @@ Use realistic estimates based on published literature, clinical studies, or epid
     console.error("Gemini epi fetch error:", err.message);
     return { ok: false, error: err.message };
   }
+}
+
+// Epi uses geo+LOT only — segments/products share the same base patient pool
+function buildEpiComboKeyMap(model) {
+  const geos = model.geographies?.length > 0 ? model.geographies : ["Global"];
+  const lots = model.linesOfTherapy || 1;
+  const lines = [];
+  for (let g = 0; g < geos.length; g++) {
+    for (let l = 0; l < lots; l++) {
+      lines.push(`  "${g}-${l}": "${geos[g]} / ${l + 1}L"`);
+    }
+  }
+  return lines.join("\n");
 }
 
 function buildComboKeyMap(model) {
@@ -189,30 +255,34 @@ Return JSON in this format:
 
 // ─── Intent classifier ────────────────────────────────────────────────────────
 
-async function classifyIntent(message) {
+async function classifyIntent(message, activeTab) {
   const lower = message.toLowerCase();
 
-  if (
+  const isEpi =
     lower.includes("epi cut") ||
     lower.includes("epidemiology") ||
     (lower.includes("patient") && (lower.includes("pull") || lower.includes("find") || lower.includes("search") || lower.includes("fetch") || lower.includes("get"))) ||
     lower.includes("incidence") || lower.includes("prevalence") ||
-    lower.includes("populate epi") || lower.includes("fill epi")
-  ) {
-    return "epi_search";
-  }
+    lower.includes("populate epi") || lower.includes("fill epi") ||
+    lower.includes("biomarker") || lower.includes("funnel") ||
+    lower.includes("her2") || lower.includes("testing rate") || lower.includes("positivity");
 
-  if (
+  const isScenario =
     lower.includes("scenario") ||
     lower.includes("downside") || lower.includes("upside") ||
     lower.includes("sensitivity") ||
     lower.includes("% down") || lower.includes("% up") ||
     lower.includes("percent down") || lower.includes("percent up") ||
-    (lower.includes("run") && (lower.includes("forecast") || lower.includes("model")))
-  ) {
+    (lower.includes("run") && (lower.includes("forecast") || lower.includes("model")));
+
+  if (isEpi) {
+    if (activeTab === "scenarios") return "blocked_epi";
+    return "epi_search";
+  }
+  if (isScenario) {
+    if (activeTab === "assumptions") return "blocked_scenario";
     return "scenario";
   }
-
   return "general";
 }
 

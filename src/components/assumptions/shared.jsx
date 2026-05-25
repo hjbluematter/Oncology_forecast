@@ -507,6 +507,7 @@ export function DirectEntryPanel({
   onSave,
   sharingGroups,      // optional: { [comboKey]: groupId } — dependents are read-only
   visibleKeys,        // optional Set<comboKey> — if provided, only show those combos
+  proposalCombos,     // optional: AI proposal { [comboKey]: { input: {year: val}, computed: {...} } }
 }) {
   const modelLevel   = (model.granularity ?? "Yearly").toLowerCase();
   const isMonthlyModel = modelLevel === "monthly";
@@ -518,13 +519,37 @@ export function DirectEntryPanel({
   const [inputLevel, setInputLevel] = useState(savedValues?.inputLevel ?? modelLevel);
   const [values, setValues] = useState(() => {
     const sv = savedValues?.combos ?? {};
-    return Object.fromEntries(combos.map(c => [c.key, sv[c.key] ?? {}]));
+    // Saved combos are { input: {year: val}, computed: {...} } — extract the input layer
+    return Object.fromEntries(combos.map(c => {
+      const raw = sv[c.key] ?? {};
+      return [c.key, raw.input ?? raw];
+    }));
   });
+
   const [saving, setSaving]       = useState(false);
   const [savedAt, setSavedAt]     = useState(null);
   const [dirty, setDirty]         = useState(false);
   const fileInputRef               = useRef(null);
   const [uploadMsg, setUploadMsg] = useState(null);
+
+  // Sync values when an AI proposal arrives (proposalCombos reference changes)
+  useEffect(() => {
+    if (!proposalCombos) return;
+    setValues(prev => {
+      const next = { ...prev };
+      for (const c of combos) {
+        const comboData = proposalCombos[c.key];
+        if (comboData !== undefined) {
+          // Proposal may be { input: {...}, computed: {...} } or a flat year map
+          next[c.key] = comboData.input ?? comboData;
+        }
+      }
+      return next;
+    });
+    setInputLevel("yearly");
+    setDirty(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposalCombos]);
 
   const inputIsMonthly = inputLevel === "monthly";
   const inputKeys = inputIsMonthly

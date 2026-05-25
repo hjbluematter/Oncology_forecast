@@ -71,10 +71,17 @@ app.delete("/api/models/:id", (req, res) => {
 // ─── AI chat endpoint ─────────────────────────────────────────────────────────
 
 app.post("/api/ai/chat", async (req, res) => {
-  const { message, model } = req.body;
+  const { message, model, activeTab } = req.body;
   if (!message || !model) return res.status(400).json({ error: "message and model are required" });
 
-  const intent = await classifyIntent(message);
+  const intent = await classifyIntent(message, activeTab);
+
+  if (intent === "blocked_scenario") {
+    return res.json({ intent: "general", text: "Scenario runner is available on the **Scenarios** tab — switch there to run it." });
+  }
+  if (intent === "blocked_epi") {
+    return res.json({ intent: "general", text: "Epi & funnel data search is available on the **Assumptions** tab — switch there to pull data." });
+  }
 
   if (intent === "epi_search") {
     const result = await fetchEpiData(model);

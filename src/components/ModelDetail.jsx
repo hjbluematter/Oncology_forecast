@@ -9,11 +9,13 @@ import InputSharingAssumptions from "./assumptions/InputSharingAssumptions";
 import { buildCombos, ComboFilter, filterCombos } from "./assumptions/shared";
 import AiChat from "./AiChat";
 import ScenariosTab from "./Scenarios";
+import ResearchTab from "./ResearchTab";
 
 const TABS = [
   { id: "assumptions", label: "Assumptions" },
   { id: "sharing", label: "Input Sharing" },
   { id: "forecast", label: "Forecast Output" },
+  { id: "research", label: "Research" },
   { id: "scenarios", label: "Scenarios" },
 ];
 
@@ -21,6 +23,18 @@ export default function ModelDetail() {
   const { activeModel, setView, updateModel } = useForecast();
   const [activeTab, setActiveTab] = useState("assumptions");
   const [epiProposal, setEpiProposal] = useState(null);
+  const [funnelProposal, setFunnelProposal] = useState(null);
+
+  async function handleSourcesSaved(rows) {
+    const newSession = { pulledAt: new Date().toISOString(), rows };
+    const epiSources = [...(activeModel.epiSources ?? []), newSession];
+    await fetch("http://localhost:3001/api/models/" + activeModel.id, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ epiSources }),
+    });
+    updateModel(activeModel.id, { epiSources });
+  }
 
   if (!activeModel) return null;
 
@@ -108,19 +122,33 @@ export default function ModelDetail() {
             model={activeModel}
             epiProposal={epiProposal}
             onEpiProposalConsumed={() => setEpiProposal(null)}
+            funnelProposal={funnelProposal}
+            onFunnelProposalConsumed={() => setFunnelProposal(null)}
           />
         )}
         {activeTab === "sharing" && <SharingTab model={activeModel} />}
         {activeTab === "forecast" && <PlaceholderTab label="Forecast Output" description="Revenue waterfall, LOT breakdown, and geography split will render here once assumptions are saved." />}
+        {activeTab === "research" && (
+          <ResearchTab
+            model={activeModel}
+            onModelUpdate={(patch) => updateModel(activeModel.id, patch)}
+          />
+        )}
         {activeTab === "scenarios" && <ScenariosTab model={activeModel} />}
       </main>
 
       <AiChat
         model={activeModel}
+        activeTab={activeTab}
         onEpiProposal={(proposal) => {
           setEpiProposal(proposal);
           setActiveTab("assumptions");
         }}
+        onFunnelProposal={(proposal) => {
+          setFunnelProposal(proposal);
+          setActiveTab("assumptions");
+        }}
+        onSourcesSaved={handleSourcesSaved}
         onScenarioSaved={(updated) => {
           updateModel(activeModel.id, { scenarios: updated.scenarios });
         }}
@@ -139,7 +167,7 @@ function SharingTab({ model }) {
   );
 }
 
-function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed }) {
+function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelProposal, onFunnelProposalConsumed }) {
   const allCombos = buildCombos(model);
   const [filterState, setFilterState] = useState(null);
   // Always provide visibleKeys so geo tabs inside DirectEntryPanel never appear —
@@ -182,7 +210,12 @@ function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed }) {
           </svg>
         }
       >
-        <FunnelCutAssumptions model={model} visibleKeys={visibleKeys} />
+        <FunnelCutAssumptions
+          model={model}
+          visibleKeys={visibleKeys}
+          funnelProposal={funnelProposal}
+          onProposalConsumed={onFunnelProposalConsumed}
+        />
       </AssumptionSection>
 
       {/* Market Share by Line */}
