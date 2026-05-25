@@ -749,11 +749,15 @@ function ScenarioCard({ parsed, model, onSaveScenario, onScenarioSaved }) {
 
   const changes = parsed.changes || [];
 
+  // Operational fields that are percentages — need absolute/relative choice
+  const OP_PCT_FIELDS = new Set(["gtn", "compliance", "access", "abandonment"]);
+
   // Determine if any change involves a percentage assumption (not epi count)
   const hasPercentageChange = changes.some(c =>
     c.assumptionType === "funnelCut" ||
     c.assumptionType === "marketShare" ||
-    c.assumptionType === "persistency"
+    c.assumptionType === "persistency" ||
+    (c.assumptionType === "operationalAssumption" && OP_PCT_FIELDS.has(c.fieldName))
   );
 
   function handleModeSelect(mode) {
@@ -829,12 +833,24 @@ function ScenarioCard({ parsed, model, onSaveScenario, onScenarioSaved }) {
         {changes.map((c, i) => {
           const keyLabel = c.comboKeys === "all" ? "all combos" : (Array.isArray(c.comboKeys) ? c.comboKeys.join(", ") : c.comboKeys);
           const yrLabel  = c.applyToYears === "all" || !c.applyToYears ? "all years" : c.applyToYears.join(", ");
+          // Build a human-readable label for the assumption type + sub-field
+          const TYPE_LABELS = {
+            epi: "Epi", funnelCut: "Funnel Cut", marketShare: "Market Share",
+            persistency: "Persistency", operationalAssumption: "Operational",
+          };
+          const FIELD_LABELS = {
+            grossPrice: "Gross Price", gtn: "GTN", compliance: "Compliance",
+            access: "Access", abandonment: "Abandonment", vials: "Vials/PM",
+          };
+          const typeLabel  = TYPE_LABELS[c.assumptionType] ?? c.assumptionType;
+          const subLabel   = c.fieldName ? (FIELD_LABELS[c.fieldName] ?? c.fieldName)
+                           : c.funnelCutId ? c.funnelCutId : null;
           return (
             <div key={i} className="flex items-start gap-2">
               <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${c.direction === "down" ? "bg-red-400" : "bg-emerald-400"}`} />
               <p className="text-slate-300 text-xs">
-                <span className="font-medium text-slate-200 capitalize">{c.assumptionType}</span>
-                {c.funnelCutId && <span className="text-slate-500"> ({c.funnelCutId})</span>}
+                <span className="font-medium text-slate-200">{typeLabel}</span>
+                {subLabel && <span className="text-slate-400"> · {subLabel}</span>}
                 <span className={c.direction === "down" ? " text-red-400" : " text-emerald-400"}>
                   {" "}{c.direction === "down" ? "▼" : "▲"} {c.deltaPercent}%
                 </span>

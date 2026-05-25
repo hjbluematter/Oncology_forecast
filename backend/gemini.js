@@ -283,11 +283,27 @@ ${comboMap}
 Available funnel cuts:
 ${funnelCuts || "  (none configured)"}
 
-Available assumption types: "epi", "funnelCut", "marketShare", "persistency"
+Available assumption types and when to use them:
+  "epi"                  — patient count / epidemiology (incidence, prevalence, patient pool)
+  "funnelCut"            — funnel cut rates (testing rate, positivity rate, diagnosis rate, etc.)
+                           → also set funnelCutId to the matching funnel cut id/label above
+  "marketShare"          — market share % per product
+  "persistency"          — duration of therapy (median months on treatment)
+  "operationalAssumption"— operational/commercial metrics (price, GTN, compliance, etc.)
+                           → also set fieldName to one of:
+                             "grossPrice"   (WAC/list/launch price per vial)
+                             "gtn"          (gross-to-net discount %, e.g. 25 means 25% discount)
+                             "compliance"   (% of patients compliant)
+                             "access"       (% of eligible patients with access)
+                             "abandonment"  (% who discontinue early)
+                             "vials"        (average vials dispensed per patient-month)
+
+IMPORTANT: never use "epi" for price, GTN, compliance, access, abandonment or vials — use "operationalAssumption" with the correct fieldName.
+IMPORTANT: never use "epi" for funnel-cut rates (testing rate, positivity, etc.) — use "funnelCut".
 
 User request: "${message}"
 
-Return JSON in this format:
+Return JSON. Each change object must include all fields (use null for inapplicable ones):
 {
   "scenarioName": "short descriptive name (max 40 chars)",
   "description": "1-sentence description of what changes",
@@ -295,6 +311,7 @@ Return JSON in this format:
     {
       "assumptionType": "epi",
       "funnelCutId": null,
+      "fieldName": null,
       "comboKeys": "all",
       "deltaPercent": 5,
       "direction": "down",

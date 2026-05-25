@@ -12,6 +12,7 @@
  *          marketShareAssumptions?, persistencyAssumptions? }
  */
 
+// 4-part keys (g-l-s-0): used by epi, funnelCut, marketShare
 function getAllComboKeys(model) {
   const geos = model.geographies?.length > 0 ? model.geographies : ["Global"];
   const lots = model.linesOfTherapy || 1;
@@ -23,6 +24,36 @@ function getAllComboKeys(model) {
         keys.push(`${g}-${l}-${s}-0`);
   return keys;
 }
+
+// 3-part keys (g-l-s): used by operationalAssumptions (asset-only metrics)
+function getAllAssetComboKeys(model) {
+  const geos = model.geographies?.length > 0 ? model.geographies : ["Global"];
+  const lots = model.linesOfTherapy || 1;
+  const segs = model.segments || 1;
+  const keys = [];
+  for (let g = 0; g < geos.length; g++)
+    for (let l = 0; l < lots; l++)
+      for (let s = 0; s < segs; s++)
+        keys.push(`${g}-${l}-${s}`);
+  return keys;
+}
+
+// Canonical field-name aliases for operationalAssumption changes.
+// Gemini may return "price", "GTN", "gross-to-net", etc. — normalise to engine field names.
+const OPERATIONAL_FIELD_ALIASES = {
+  price: "grossPrice", "gross price": "grossPrice", grossprice: "grossPrice",
+  "launch price": "grossPrice", wac: "grossPrice", "list price": "grossPrice",
+  "net price": "grossPrice",
+  gtn: "gtn", "gross-to-net": "gtn", "grosstenet": "gtn", "gross to net": "gtn",
+  compliance: "compliance",
+  access: "access", "access rate": "access",
+  abandonment: "abandonment", "abandonment rate": "abandonment",
+  vials: "vials", "vials per pm": "vials", "vials per patient month": "vials",
+  grossPrice: "grossPrice",
+};
+
+// Fields that are dollar amounts or non-percentage quantities (no 100% cap)
+const OPERATIONAL_COUNT_FIELDS = new Set(["grossPrice", "vials"]);
 
 /**
  * Defensive unwrap for corrupted combo period-value dicts.
@@ -177,6 +208,38 @@ export function applyScenarioDelta(model, parsed, applyMode = "relative") {
         }
       }
       snap.persistencyAssumptions = { ...model.persistencyAssumptions, combos: modified };
+    }
+
+    if (assumptionType === "operationalAssumption") {
+      // Resolve field name — accept raw Gemini output or common aliases
+      const rawField = change.fieldName ?? "";
+      const fieldName = OPERATIONAL_FIELD_ALIASES[rawField.toLowerCase()] ?? rawField;
+      if (!fieldName) continue;
+
+      // Operational assumptions use 3-part asset keys (g-l-s), not 4-part
+      const assetTargetKeys = comboKeys === "all"
+        ? getAllAssetComboKeys(model)
+        : (Array.isArray(comboKeys) ? comboKeys : [comboKeys]);
+
+      const isCount = OPERATIONAL_COUNT_FIELDS.has(fieldName);
+      const base = model.operationalAssumptions?.[fieldName]?.combos ?? {};
+      const modified = JSON.parse(JSON.stringify(base));
+
+      for (const ck of assetTargetKeys) {
+        if (!modified[ck]) continue;
+        const inputDict    = unwrapPeriodDict(modified[ck].input    ?? {});
+        const computedDict = unwrapPeriodDict(modified[ck].computed ?? {});
+        modified[ck].input    = applyToPeriodDict(inputDict,    isCount);
+        modified[ck].computed = applyToPeriodDict(computedDict, isCount);
+      }
+
+      snap.operationalAssumptions = {
+        ...(snap.operationalAssumptions ?? model.operationalAssumptions ?? {}),
+        [fieldName]: {
+          ...(model.operationalAssumptions?.[fieldName] ?? {}),
+          combos: modified,
+        },
+      };
     }
   }
 
