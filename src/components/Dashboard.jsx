@@ -104,6 +104,17 @@ export default function Dashboard() {
             </div>
 
             <button
+              onClick={() => setView("portfolio-select")}
+              disabled={models.length === 0}
+              title={models.length === 0 ? "Create at least one forecast model first" : "Aggregate and compare all forecast models"}
+              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-200 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-slate-700"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6" />
+              </svg>
+              Portfolio Aggregation
+            </button>
+            <button
               onClick={() => setView("new-model")}
               className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
             >

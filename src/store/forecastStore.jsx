@@ -14,7 +14,8 @@ export function ForecastProvider({ children }) {
   const [error, setError]           = useState(null);
   const [view, setView]             = useState("dashboard");
   const [activeModelId, setActiveModelId] = useState(null);
-  const [editingModel, setEditingModel]   = useState(null); // model being edited in wizard
+  const [editingModel, setEditingModel]   = useState(null);
+  const [portfolioConfig, setPortfolioConfig] = useState(null);
 
   useEffect(() => {
     fetch(`${API}/models`)
@@ -80,6 +81,7 @@ export function ForecastProvider({ children }) {
         openModel, openEditModel, updateModel,
         view, setView,
         activeModel, editingModel,
+        portfolioConfig, setPortfolioConfig,
       }}
     >
       {children}
