@@ -487,7 +487,15 @@ function EpiProposalCard({ data, model, onApplyEpi, onApplyFunnel, onSourcesSave
       }
     }
     onApplyEpi?.({ inputLevel: "yearly", combos: combosPayload, _source: data.source });
-    if (sourcingRows.length > 0) onSourcesSaved?.(sourcingRows);
+    // Save full session (rows + derivation + population + methodology) so Research tab can reconstruct everything
+    onSourcesSaved?.({
+      rows: sourcingRows,
+      derivation: data.derivation ?? {},
+      population_by_year: data.population_by_year ?? {},
+      funnelCuts: data.funnelCuts ?? {},
+      methodology: data.methodology ?? null,
+      source: data.source ?? null,
+    });
     setAppliedEpi(true);
   }
 
@@ -508,7 +516,16 @@ function EpiProposalCard({ data, model, onApplyEpi, onApplyFunnel, onSourcesSave
       funnelProposal[label] = { inputLevel: "yearly", combos: combosPayload };
     }
     onApplyFunnel?.(funnelProposal);
-    if (!appliedEpi && sourcingRows.length > 0) onSourcesSaved?.(sourcingRows);
+    if (!appliedEpi) {
+      onSourcesSaved?.({
+        rows: sourcingRows,
+        derivation: data.derivation ?? {},
+        population_by_year: data.population_by_year ?? {},
+        funnelCuts: data.funnelCuts ?? {},
+        methodology: data.methodology ?? null,
+        source: data.source ?? null,
+      });
+    }
     setAppliedFunnel(true);
   }
 

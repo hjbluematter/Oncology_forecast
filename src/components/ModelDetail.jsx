@@ -59,8 +59,11 @@ export default function ModelDetail() {
     }
   }, [activeModel]);
 
-  async function handleSourcesSaved(rows) {
-    const newSession = { pulledAt: new Date().toISOString(), rows };
+  async function handleSourcesSaved(sessionData) {
+    // sessionData may be a plain rows array (legacy) or a full session object {rows, derivation, population_by_year, ...}
+    const newSession = Array.isArray(sessionData)
+      ? { pulledAt: new Date().toISOString(), rows: sessionData }
+      : { pulledAt: new Date().toISOString(), ...sessionData };
     const epiSources = [...(activeModel.epiSources ?? []), newSession];
     await fetch("http://localhost:3001/api/models/" + activeModel.id, {
       method: "PATCH",
