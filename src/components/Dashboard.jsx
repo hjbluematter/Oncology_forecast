@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForecast } from "../store/forecastStore";
+
+const API = "http://localhost:3001/api";
 
 const STATUS_COLORS = {
   Active: "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30",
@@ -22,7 +24,33 @@ const MODEL_TYPE_ICON = {
 
 export default function Dashboard() {
   const { models, loading, error, openModel, openEditModel, deleteModel, setView } = useForecast();
-  const [confirmDelete, setConfirmDelete] = useState(null); // model id pending confirm
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [cloudStatus, setCloudStatus] = useState(null);
+  const [migrating, setMigrating] = useState(false);
+  const [migrateMsg, setMigrateMsg] = useState(null);
+
+  useEffect(() => {
+    fetch(`${API}/cloud/status`)
+      .then(r => r.json())
+      .then(s => setCloudStatus(s.state === "connected" ? "connected" : "error"))
+      .catch(() => setCloudStatus("error"));
+  }, []);
+
+  async function handleMigrate() {
+    setMigrating(true);
+    setMigrateMsg(null);
+    try {
+      const res = await fetch(`${API}/cloud/migrate`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Migration failed");
+      setCloudStatus("connected");
+      setMigrateMsg({ type: "success", text: `${data.uploaded} model${data.uploaded !== 1 ? "s" : ""} uploaded to cloud` });
+    } catch (e) {
+      setMigrateMsg({ type: "error", text: e.message });
+    } finally {
+      setMigrating(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-950">
@@ -38,15 +66,53 @@ export default function Dashboard() {
             <span className="text-white font-semibold text-lg tracking-tight">OncoCast</span>
             <span className="text-blue-300 text-sm opacity-80">Portfolio Forecasting</span>
           </div>
-          <button
-            onClick={() => setView("new-model")}
-            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            New Forecast Model
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Cloud status + migrate */}
+            <div className="flex items-center gap-2">
+              <span
+                title={
+                  cloudStatus === "connected" ? "MongoDB Atlas connected" :
+                  cloudStatus === "error"     ? "Cloud not connected — update MONGODB_URI in backend/.env" :
+                  "Checking cloud connection…"
+                }
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  cloudStatus === "connected" ? "bg-emerald-400" :
+                  cloudStatus === "error"     ? "bg-red-500" :
+                                               "bg-slate-500 animate-pulse"
+                }`}
+              />
+              <button
+                onClick={handleMigrate}
+                disabled={migrating || cloudStatus === "error"}
+                title={cloudStatus === "error" ? "Cloud not connected" : "Upload all local models to MongoDB Atlas"}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700"
+              >
+                {migrating ? (
+                  <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.338-2.32 3.75 3.75 0 013.357 5.094" />
+                  </svg>
+                )}
+                {migrating ? "Uploading…" : "Sync All to Cloud"}
+              </button>
+              {migrateMsg && (
+                <span className={`text-xs ${migrateMsg.type === "success" ? "text-emerald-400" : "text-red-400"}`}>
+                  {migrateMsg.text}
+                </span>
+              )}
+            </div>
+
+            <button
+              onClick={() => setView("new-model")}
+              className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              New Forecast Model
+            </button>
+          </div>
         </div>
       </header>
 

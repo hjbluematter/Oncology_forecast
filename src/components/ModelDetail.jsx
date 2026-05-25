@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useForecast } from "../store/forecastStore";
 import EpiAssumptions from "./assumptions/EpiAssumptions";
 import FunnelCutAssumptions from "./assumptions/FunnelCutAssumptions";
@@ -6,6 +6,8 @@ import MarketShareAssumptions from "./assumptions/MarketShareAssumptions";
 import PersistencyAssumptions from "./assumptions/PersistencyAssumptions";
 import OperationalAssumptions from "./assumptions/OperationalAssumptions";
 import InputSharingAssumptions from "./assumptions/InputSharingAssumptions";
+import ProgressionAssumptions from "./assumptions/ProgressionAssumptions";
+import ForecastOutput from "./ForecastOutput";
 import { buildCombos, ComboFilter, filterCombos } from "./assumptions/shared";
 import AiChat from "./AiChat";
 import ScenariosTab from "./Scenarios";
@@ -24,6 +26,38 @@ export default function ModelDetail() {
   const [activeTab, setActiveTab] = useState("assumptions");
   const [epiProposal, setEpiProposal] = useState(null);
   const [funnelProposal, setFunnelProposal] = useState(null);
+
+  // Cloud save state
+  const [cloudStatus, setCloudStatus] = useState(null);
+  const [cloudSaving, setCloudSaving] = useState(false);
+  const [cloudMsg, setCloudMsg] = useState(null);
+
+  useEffect(() => {
+    fetch("http://localhost:3001/api/cloud/status")
+      .then(r => r.json())
+      .then(d => setCloudStatus(d.connected ? "connected" : "disconnected"))
+      .catch(() => setCloudStatus("disconnected"));
+  }, []);
+
+  const handleCloudSave = useCallback(async () => {
+    if (!activeModel) return;
+    setCloudSaving(true);
+    setCloudMsg(null);
+    try {
+      const r = await fetch(`http://localhost:3001/api/cloud/save/${activeModel.id}`, { method: "POST" });
+      const d = await r.json();
+      if (d.success) {
+        setCloudMsg({ type: "success", text: "Saved to cloud" });
+      } else {
+        setCloudMsg({ type: "error", text: d.error ?? "Save failed" });
+      }
+    } catch {
+      setCloudMsg({ type: "error", text: "Network error" });
+    } finally {
+      setCloudSaving(false);
+      setTimeout(() => setCloudMsg(null), 3000);
+    }
+  }, [activeModel]);
 
   async function handleSourcesSaved(rows) {
     const newSession = { pulledAt: new Date().toISOString(), rows };
@@ -73,6 +107,29 @@ export default function ModelDetail() {
             }`}>
               {activeModel.status}
             </span>
+            {/* Cloud save */}
+            <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${
+                cloudStatus === "connected" ? "bg-emerald-400" :
+                cloudStatus === "disconnected" ? "bg-red-400" : "bg-slate-600"
+              }`} title={cloudStatus ?? "checking…"} />
+              <button
+                onClick={handleCloudSave}
+                disabled={cloudSaving || cloudStatus !== "connected"}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                {cloudSaving
+                  ? <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                  : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5v-9m0 0l-3.75 3.75M12 7.5l3.75 3.75M3 15a4.5 4.5 0 004.5 4.5h9A4.5 4.5 0 0021 15" /></svg>
+                }
+                Save to Cloud
+              </button>
+              {cloudMsg && (
+                <span className={`text-xs ${cloudMsg.type === "success" ? "text-emerald-400" : "text-red-400"}`}>
+                  {cloudMsg.text}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -127,7 +184,7 @@ export default function ModelDetail() {
           />
         )}
         {activeTab === "sharing" && <SharingTab model={activeModel} />}
-        {activeTab === "forecast" && <PlaceholderTab label="Forecast Output" description="Revenue waterfall, LOT breakdown, and geography split will render here once assumptions are saved." />}
+        {activeTab === "forecast" && <ForecastOutput model={activeModel} />}
         {activeTab === "research" && (
           <ResearchTab
             model={activeModel}
@@ -157,7 +214,7 @@ export default function ModelDetail() {
   );
 }
 
-// ─── Assumptions tab ──────────────────────────────────────────────────────────
+// ─── Sharing tab ──────────────────────────────────────────────────────────────
 
 function SharingTab({ model }) {
   return (
@@ -166,6 +223,8 @@ function SharingTab({ model }) {
     </div>
   );
 }
+
+// ─── Assumptions tab ──────────────────────────────────────────────────────────
 
 function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelProposal, onFunnelProposalConsumed }) {
   const allCombos = buildCombos(model);
@@ -239,6 +298,17 @@ function AssumptionsTab({ model, epiProposal, onEpiProposalConsumed, funnelPropo
           icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>}
         >
           <PersistencyAssumptions model={model} visibleKeys={visibleKeys} />
+        </AssumptionSection>
+      )}
+
+      {/* Progression — Patient Flow models with >1 LOT */}
+      {model.modelType === "Patient Flow" && (model.linesOfTherapy ?? 1) > 1 && (
+        <AssumptionSection
+          title="Progression Rates"
+          subtitle={`Proportion of patients advancing to next line · ${model.linesOfTherapy ?? 1}L`}
+          icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M17.25 8.25L21 12m0 0l-3.75 3.75M21 12H3"/></svg>}
+        >
+          <ProgressionAssumptions model={model} visibleKeys={visibleKeys} />
         </AssumptionSection>
       )}
 

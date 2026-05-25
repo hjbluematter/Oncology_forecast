@@ -283,7 +283,7 @@ export function flowToMonthly(yearlyVals, startYear, n) {
   for (let y = startYear; y < startYear + n; y++) {
     const v = parseFloat(yearlyVals[String(y)]);
     for (let m = 1; m <= 12; m++)
-      out[`${y}-${String(m).padStart(2,"0")}`] = isNaN(v) ? "" : Math.round(v / 12);
+      out[`${y}-${String(m).padStart(2,"00")}`] = isNaN(v) ? "" : Math.round(v / 12);
   }
   return out;
 }
@@ -390,13 +390,16 @@ function TableRow({ row, ri, keys, editable, showPct, onCell }) {
         return (
           <td key={k} className="border-l border-[#d1e0f5] px-0.5 py-0.5">
             {isEditable ? (
-              <input
-                type="text"
-                value={display}
-                onChange={e => onCell(ri, k, e.target.value)}
-                placeholder="—"
-                className="w-full h-full px-2 py-1.5 text-right tabular-nums text-slate-100 text-xs bg-transparent border border-transparent rounded hover:border-slate-500 focus:border-violet-500 focus:bg-white focus:outline-none transition-colors placeholder-slate-500"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={display}
+                  onChange={e => onCell(ri, k, e.target.value)}
+                  placeholder="—"
+                  className={`w-full h-full ${showPct ? "pl-2 pr-5" : "px-2"} py-1.5 text-right tabular-nums text-slate-100 text-xs bg-transparent border border-transparent rounded hover:border-slate-500 focus:border-violet-500 focus:bg-white focus:outline-none transition-colors placeholder-slate-500`}
+                />
+                {showPct && <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs pointer-events-none select-none">%</span>}
+              </div>
             ) : (
               <div className={`px-2 py-1.5 text-right tabular-nums text-xs ${display ? (row.locked ? "text-slate-400" : "text-slate-200") : "text-slate-500"}`}>
                 {display ? (showPct ? `${display}%` : display) : "—"}
@@ -529,8 +532,7 @@ export function DirectEntryPanel({
   const [saving, setSaving]       = useState(false);
   const [savedAt, setSavedAt]     = useState(null);
   const [dirty, setDirty]         = useState(false);
-  const fileInputRef               = useRef(null);
-  const [uploadMsg, setUploadMsg] = useState(null);
+  const [saveError, setSaveError] = useState(null);
 
   // Sync values when an AI proposal arrives (proposalCombos reference changes)
   useEffect(() => {
@@ -550,6 +552,9 @@ export function DirectEntryPanel({
     setDirty(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proposalCombos]);
+
+  const fileInputRef               = useRef(null);
+  const [uploadMsg, setUploadMsg] = useState(null);
 
   const inputIsMonthly = inputLevel === "monthly";
   const inputKeys = inputIsMonthly
@@ -591,20 +596,27 @@ export function DirectEntryPanel({
 
   async function handleSave() {
     setSaving(true);
-    // Propagate primary values into dependent combos before saving
-    const finalValues = { ...values };
-    for (const [depKey, info] of Object.entries(dependentOf)) {
-      finalValues[depKey] = { ...(finalValues[info.primaryKey] ?? {}) };
-    }
-    const combosPayload = Object.fromEntries(combos.map(c => [
-      c.key, {
-        input: finalValues[c.key] ?? {},
-        computed: convertValues(finalValues[c.key] ?? {}, modelLevel, inputLevel, model.startYear, model.timelineYears, conversionType),
+    setSaveError(null);
+    try {
+      // Propagate primary values into dependent combos before saving
+      const finalValues = { ...values };
+      for (const [depKey, info] of Object.entries(dependentOf)) {
+        finalValues[depKey] = { ...(finalValues[info.primaryKey] ?? {}) };
       }
-    ]));
-    await onSave({ inputLevel, combos: combosPayload });
-    setSaving(false); setDirty(false);
-    setSavedAt(new Date().toLocaleTimeString());
+      const combosPayload = Object.fromEntries(combos.map(c => [
+        c.key, {
+          input: finalValues[c.key] ?? {},
+          computed: convertValues(finalValues[c.key] ?? {}, modelLevel, inputLevel, model.startYear, model.timelineYears, conversionType),
+        }
+      ]));
+      await onSave({ inputLevel, combos: combosPayload });
+      setDirty(false);
+      setSavedAt(new Date().toLocaleTimeString());
+    } catch (err) {
+      setSaveError(err?.message ?? "Save failed");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function downloadExcel() {
@@ -715,6 +727,7 @@ export function DirectEntryPanel({
             onChange={e => { const f = e.target.files?.[0]; if(f) handleUpload(f); e.target.value=""; }}
           />
           {uploadMsg && <span className={`text-xs ${uploadMsg.type==="success"?"text-emerald-400":"text-red-400"}`}>{uploadMsg.text}</span>}
+          {saveError && <span className="text-xs text-red-400">{saveError}</span>}
           <span className="text-xs">{dirty?<span className="text-amber-500">Unsaved</span>:savedAt?<span className="text-slate-600">Saved {savedAt}</span>:null}</span>
           <button onClick={handleSave} disabled={saving||!dirty}
             className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"

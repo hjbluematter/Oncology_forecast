@@ -4,13 +4,14 @@ const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const { fetchEpiData, parseScenarioIntent, classifyIntent, answerGeneral } = require("./gemini");
+const connect = require("./db/mongodb");
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 const DATA_FILE = path.join(__dirname, "data", "models.json");
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 function readModels() {
   const raw = fs.readFileSync(DATA_FILE, "utf-8");
@@ -66,6 +67,52 @@ app.delete("/api/models/:id", (req, res) => {
     return res.status(404).json({ error: "Model not found" });
   writeModels(filtered);
   res.json({ success: true });
+});
+
+// ─── Cloud routes ─────────────────────────────────────────────────────────────
+
+app.get("/api/cloud/status", (req, res) => {
+  res.json({ connected: true });
+});
+
+app.post("/api/cloud/save/:id", async (req, res) => {
+  try {
+    const models = readModels();
+    const model = models.find((m) => m.id === req.params.id);
+    if (!model) return res.status(404).json({ error: "Model not found" });
+    // Save to cloud (MongoDB) — use the connect helper
+    const db = await connect();
+    const collection = db.collection("models");
+    await collection.replaceOne({ id: model.id }, model, { upsert: true });
+    res.json({ success: true, savedAt: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/cloud/migrate", async (req, res) => {
+  try {
+    const models = readModels();
+    const db = await connect();
+    const collection = db.collection("models");
+    for (const model of models) {
+      await collection.replaceOne({ id: model.id }, model, { upsert: true });
+    }
+    res.json({ success: true, count: models.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/cloud/models", async (req, res) => {
+  try {
+    const db = await connect();
+    const collection = db.collection("models");
+    const models = await collection.find({}).toArray();
+    res.json(models);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── AI chat endpoint ─────────────────────────────────────────────────────────
@@ -226,7 +273,15 @@ function applyScenarioDelta(model, parsed) {
   };
 }
 
-app.listen(PORT, () => {
-  console.log(`OncoCast API running at http://localhost:${PORT}`);
-  console.log(`Models stored at: ${DATA_FILE}`);
+connect().then(() => {
+  app.listen(PORT, () => {
+    console.log(`OncoCast API running at http://localhost:${PORT}`);
+    console.log(`Models stored at: ${DATA_FILE}`);
+  });
+}).catch(err => {
+  console.warn("MongoDB connection failed, starting without cloud sync:", err.message);
+  app.listen(PORT, () => {
+    console.log(`OncoCast API running at http://localhost:${PORT}`);
+    console.log(`Models stored at: ${DATA_FILE}`);
+  });
 });
