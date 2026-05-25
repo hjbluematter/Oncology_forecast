@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useForecast } from "../store/forecastStore";
+import { useAuth } from "../store/authStore";
 
 const API = "http://localhost:3001/api";
 
@@ -22,8 +23,17 @@ const MODEL_TYPE_ICON = {
   ),
 };
 
+const ACCESS_COLOR = {
+  READ:  "bg-slate-700/60 text-slate-400",
+  WRITE: "bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20",
+  ADMIN: "bg-violet-500/10 text-violet-400 ring-1 ring-violet-500/20",
+};
+const ACCESS_LABEL = { READ: "Read Access", WRITE: "Edit Access", ADMIN: "Admin" };
+
 export default function Dashboard() {
   const { models, loading, error, openModel, openEditModel, deleteModel, setView } = useForecast();
+  const { user, isAdmin, logout } = useAuth();
+  const canCreate = isAdmin;
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [cloudStatus, setCloudStatus] = useState(null);
   const [migrating, setMigrating] = useState(false);
@@ -67,6 +77,44 @@ export default function Dashboard() {
             <span className="text-blue-300 text-sm opacity-80">Portfolio Forecasting</span>
           </div>
           <div className="flex items-center gap-3">
+            {/* User chip */}
+            {user && (
+              <div className="flex items-center gap-2 bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5">
+                <div className="w-5 h-5 rounded-full bg-violet-600/30 flex items-center justify-center text-violet-400 text-xs font-semibold">
+                  {user.name?.[0]?.toUpperCase() ?? "?"}
+                </div>
+                <span className="text-slate-300 text-xs font-medium">{user.name}</span>
+                {isAdmin && (
+                  <span className="bg-violet-500/15 text-violet-400 ring-1 ring-violet-500/30 text-[10px] px-1.5 py-0.5 rounded-full font-medium">Admin</span>
+                )}
+              </div>
+            )}
+
+            {/* Manage Access — admin only */}
+            {isAdmin && (
+              <button
+                onClick={() => setView("user-management")}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-all bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                </svg>
+                Manage Access
+              </button>
+            )}
+
+            {/* Logout */}
+            <button
+              onClick={logout}
+              title="Sign out"
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-all bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+              </svg>
+              Logout
+            </button>
+
             {/* Cloud status + migrate */}
             <div className="flex items-center gap-2">
               <span
@@ -114,15 +162,17 @@ export default function Dashboard() {
               </svg>
               Portfolio Aggregation
             </button>
-            <button
-              onClick={() => setView("new-model")}
-              className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
-              New Forecast Model
-            </button>
+            {canCreate && (
+              <button
+                onClick={() => setView("new-model")}
+                className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                New Forecast Model
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -205,6 +255,7 @@ export default function Dashboard() {
 
 function ModelCard({ model, onClick, onEdit, onDelete }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const access = model._access ?? "WRITE";
 
   return (
     <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 hover:border-violet-500/50 transition-all group">
@@ -226,6 +277,11 @@ function ModelCard({ model, onClick, onEdit, onDelete }) {
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[model.status]}`}>
             {model.status}
           </span>
+          {ACCESS_COLOR[access] && (
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ACCESS_COLOR[access]}`}>
+              {ACCESS_LABEL[access]}
+            </span>
+          )}
 
           {/* Three-dot menu */}
           <div className="relative">

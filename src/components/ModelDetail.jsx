@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useForecast } from "../store/forecastStore";
+import { useAuth } from "../store/authStore";
+import PermissionsPanel from "./permissions/PermissionsPanel";
 
 const API = "http://localhost:3001/api";
 import EpiAssumptions from "./assumptions/EpiAssumptions";
@@ -14,7 +16,7 @@ import { buildCombos, ComboFilter, filterCombos } from "./assumptions/shared";
 import ForecastOutput from "./ForecastOutput";
 import ScenarioManager from "./ScenarioManager";
 
-const TABS = [
+const BASE_TABS = [
   { id: "assumptions", label: "Assumptions" },
   { id: "sharing", label: "Input Sharing" },
   { id: "forecast", label: "Forecast Output" },
@@ -22,7 +24,8 @@ const TABS = [
 ];
 
 export default function ModelDetail() {
-  const { activeModel, setView } = useForecast();
+  const { activeModel, setView, authHeaders } = useForecast();
+  const { isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState("assumptions");
   const [cloudStatus, setCloudStatus] = useState(null); // null | "connected" | "error"
   const [cloudSaving, setCloudSaving] = useState(false);
@@ -41,9 +44,9 @@ export default function ModelDetail() {
     setCloudMsg(null);
     try {
       const res = await fetch(`${API}/cloud/save/${activeModel.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: activeModel }),
+        method:  "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body:    JSON.stringify({ model: activeModel }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Save failed");
@@ -54,9 +57,16 @@ export default function ModelDetail() {
     } finally {
       setCloudSaving(false);
     }
-  }, [activeModel]);
+  }, [activeModel, authHeaders]);
 
   if (!activeModel) return null;
+
+  // Access control — _access field is injected by the backend
+  const access       = activeModel._access ?? "WRITE";
+  const readOnly     = access === "READ";
+  const isModelAdmin = isAdmin || access === "ADMIN";
+
+  const TABS = [...BASE_TABS, ...(isModelAdmin ? [{ id: "permissions", label: "Permissions" }] : [])];
 
   const endYear = activeModel.startYear + activeModel.timelineYears - 1;
   const totalPeriods =
@@ -93,6 +103,14 @@ export default function ModelDetail() {
             }`}>
               {activeModel.status}
             </span>
+            {readOnly && (
+              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-700/60 text-slate-400 ring-1 ring-slate-600/40 font-medium">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                </svg>
+                Read-only view
+              </span>
+            )}
 
             {/* Cloud save */}
             <div className="flex items-center gap-2 border-l border-slate-700 pl-3">
@@ -169,10 +187,15 @@ export default function ModelDetail() {
       </div>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {activeTab === "assumptions" && <AssumptionsTab model={activeModel} />}
-        {activeTab === "sharing" && <SharingTab model={activeModel} />}
-        {activeTab === "forecast" && <ForecastOutput model={activeModel} />}
-        {activeTab === "scenarios" && <ScenarioManager model={activeModel} />}
+        {activeTab === "assumptions" && <AssumptionsTab model={activeModel} readOnly={readOnly} />}
+        {activeTab === "sharing"     && <SharingTab     model={activeModel} readOnly={readOnly} />}
+        {activeTab === "forecast"    && <ForecastOutput model={activeModel} />}
+        {activeTab === "scenarios"   && <ScenarioManager model={activeModel} />}
+        {activeTab === "permissions" && isModelAdmin && (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+            <PermissionsPanel model={activeModel} />
+          </div>
+        )}
       </main>
     </div>
   );
@@ -180,15 +203,15 @@ export default function ModelDetail() {
 
 // ─── Assumptions tab ──────────────────────────────────────────────────────────
 
-function SharingTab({ model }) {
+function SharingTab({ model, readOnly }) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-      <InputSharingAssumptions model={model} />
+      <InputSharingAssumptions model={model} readOnly={readOnly} />
     </div>
   );
 }
 
-function AssumptionsTab({ model }) {
+function AssumptionsTab({ model, readOnly }) {
   const allCombos = buildCombos(model);
   const [filterState, setFilterState] = useState(null);
   // Always provide visibleKeys so geo tabs inside DirectEntryPanel never appear —
@@ -212,7 +235,7 @@ function AssumptionsTab({ model }) {
           </svg>
         }
       >
-        <EpiAssumptions model={model} visibleKeys={visibleKeys} />
+        <EpiAssumptions model={model} visibleKeys={visibleKeys} readOnly={readOnly} />
       </AssumptionSection>
 
       {/* Biomarker & Funnel Rates */}
@@ -225,7 +248,7 @@ function AssumptionsTab({ model }) {
           </svg>
         }
       >
-        <FunnelCutAssumptions model={model} visibleKeys={visibleKeys} />
+        <FunnelCutAssumptions model={model} visibleKeys={visibleKeys} readOnly={readOnly} />
       </AssumptionSection>
 
       {/* Market Share by Line */}
@@ -238,7 +261,7 @@ function AssumptionsTab({ model }) {
           </svg>
         }
       >
-        <MarketShareAssumptions model={model} visibleKeys={visibleKeys} />
+        <MarketShareAssumptions model={model} visibleKeys={visibleKeys} readOnly={readOnly} />
       </AssumptionSection>
 
       {/* Persistency — incidence models only */}
@@ -248,7 +271,7 @@ function AssumptionsTab({ model }) {
           subtitle={`Median months on therapy · all products · ${model.linesOfTherapy ?? 1}L × ${model.segments ?? 1} segment${(model.segments??1)>1?"s":""}`}
           icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>}
         >
-          <PersistencyAssumptions model={model} visibleKeys={visibleKeys} />
+          <PersistencyAssumptions model={model} visibleKeys={visibleKeys} readOnly={readOnly} />
         </AssumptionSection>
       )}
 
@@ -265,7 +288,7 @@ function AssumptionsTab({ model }) {
             </svg>
           }
         >
-          <ProgressionAssumptions model={model} visibleKeys={visibleKeys} />
+          <ProgressionAssumptions model={model} visibleKeys={visibleKeys} readOnly={readOnly} />
         </AssumptionSection>
       )}
 
@@ -275,7 +298,7 @@ function AssumptionsTab({ model }) {
         subtitle={`Compliance · Access · Abandonment · Vials · Price · GTN${model.enableIRA||model.ira?" · IRA":""}${model.enablePTRS||model.ptrs?" · PTRS":""} · key product only`}
         icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6a7.5 7.5 0 107.5 7.5h-7.5V6z"/><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 10.5H21A7.5 7.5 0 0013.5 3v7.5z"/></svg>}
       >
-        <OperationalAssumptions model={model} visibleKeys={visibleKeys} />
+        <OperationalAssumptions model={model} visibleKeys={visibleKeys} readOnly={readOnly} />
       </AssumptionSection>
 
       {/* RoE / RoW derived geography scaling — shown for all models (component self-hides if not applicable) */}
@@ -289,7 +312,7 @@ function AssumptionsTab({ model }) {
             </svg>
           }
         >
-          <RoeRowAssumptions model={model} />
+          <RoeRowAssumptions model={model} readOnly={readOnly} />
         </AssumptionSection>
       )}
     </div>

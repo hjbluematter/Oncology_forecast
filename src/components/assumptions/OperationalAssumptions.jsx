@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useForecast } from "../../store/forecastStore";
 import { buildAssetCombos, DirectEntryPanel, strip, getSharingForAssetAssumption } from "./shared";
+import { apiFetch } from "../../utils/apiFetch";
 
 const API = "http://localhost:3001/api";
 
@@ -16,7 +17,7 @@ const TIME_SERIES_METRICS = [
   { id:"gtn",           label:"Gross-to-Net",            unit:"%",      showPct:true,  description:"GTN adjustment — net price = gross × (1 − GTN%)" },
 ];
 
-export default function OperationalAssumptions({ model, visibleKeys }) {
+export default function OperationalAssumptions({ model, visibleKeys, readOnly = false }) {
   const { updateModel } = useForecast();
   const combos = buildAssetCombos(model);
 
@@ -33,7 +34,7 @@ export default function OperationalAssumptions({ model, visibleKeys }) {
       ...(model.operationalAssumptions ?? {}),
       [metricId]: payload,
     };
-    await fetch(`${API}/models/${model.id}`, {
+    await apiFetch(`${API}/models/${model.id}`, {
       method: "PATCH", headers: { "Content-Type":"application/json" },
       body: JSON.stringify({ operationalAssumptions }),
     });
@@ -45,7 +46,7 @@ export default function OperationalAssumptions({ model, visibleKeys }) {
       ...(model.operationalAssumptions ?? {}),
       ptrs: { combos: values },
     };
-    await fetch(`${API}/models/${model.id}`, {
+    await apiFetch(`${API}/models/${model.id}`, {
       method: "PATCH", headers: { "Content-Type":"application/json" },
       body: JSON.stringify({ operationalAssumptions }),
     });
@@ -70,6 +71,7 @@ export default function OperationalAssumptions({ model, visibleKeys }) {
           onSave={payload => saveCombosForMetric(m.id, payload)}
           sharingGroups={getSharingForAssetAssumption(model, m.id)}
           visibleKeys={assetVisibleKeys}
+          readOnly={readOnly}
         />
       ))}
 
@@ -82,6 +84,7 @@ export default function OperationalAssumptions({ model, visibleKeys }) {
           onSave={payload => saveCombosForMetric("ira", payload)}
           sharingGroups={getSharingForAssetAssumption(model, "ira")}
           visibleKeys={assetVisibleKeys}
+          readOnly={readOnly}
         />
       )}
 
@@ -93,6 +96,7 @@ export default function OperationalAssumptions({ model, visibleKeys }) {
           onSave={savePTRS}
           sharingGroups={getSharingForAssetAssumption(model, "ptrs")}
           visibleKeys={assetVisibleKeys}
+          readOnly={readOnly}
         />
       )}
     </div>
@@ -101,7 +105,7 @@ export default function OperationalAssumptions({ model, visibleKeys }) {
 
 // ── Time-series metric section ────────────────────────────────────────────────
 
-function MetricSection({ metric, model, combos, savedValues, onSave, sharingGroups, visibleKeys }) {
+function MetricSection({ metric, model, combos, savedValues, onSave, sharingGroups, visibleKeys, readOnly }) {
   const [open, setOpen] = useState(true);
 
   return (
@@ -130,6 +134,7 @@ function MetricSection({ metric, model, combos, savedValues, onSave, sharingGrou
             onSave={onSave}
             sharingGroups={sharingGroups}
             visibleKeys={visibleKeys}
+            readOnly={readOnly}
           />
         </div>
       )}
