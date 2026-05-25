@@ -14,6 +14,7 @@ import {
 import { ForecastContext, useForecast } from "../store/forecastStore";
 import { runForecast } from "../utils/forecastEngine";
 import { buildCombos, ComboFilter, filterCombos } from "./assumptions/shared";
+import { apiFetch } from "../utils/apiFetch";
 import EpiAssumptions from "./assumptions/EpiAssumptions";
 import FunnelCutAssumptions from "./assumptions/FunnelCutAssumptions";
 import MarketShareAssumptions from "./assumptions/MarketShareAssumptions";
@@ -1119,7 +1120,7 @@ export default function ScenarioManager({ model }) {
     const patch = { scenarios: updated };
     updateModel(model.id, patch);
     try {
-      const res = await fetch(`${API}/models/${model.id}`, {
+      const res = await apiFetch(`${API}/models/${model.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),

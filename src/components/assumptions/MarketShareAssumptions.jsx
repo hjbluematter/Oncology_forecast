@@ -1,16 +1,17 @@
 import { useState } from "react";
 import { useForecast } from "../../store/forecastStore";
 import { buildCombos, buildYearlyKeys, buildMonthlyKeys, rateToMonthly, rateToYearly, MultiRowTable, DirectEntryPanel, MONTH_SHORT, num, getSharingForAssumption } from "./shared";
+import { apiFetch } from "../../utils/apiFetch";
 
 const API = "http://localhost:3001/api";
 
-export default function MarketShareAssumptions({ model, visibleKeys }) {
+export default function MarketShareAssumptions({ model, visibleKeys, readOnly = false }) {
   const { updateModel } = useForecast();
   const combos = buildCombos(model);
 
   async function handleSave(payload) {
     const marketShareAssumptions = payload;
-    await fetch(`${API}/models/${model.id}`, {
+    await apiFetch(`${API}/models/${model.id}`, {
       method: "PATCH", headers: { "Content-Type":"application/json" },
       body: JSON.stringify({ marketShareAssumptions }),
     });
@@ -43,6 +44,7 @@ export default function MarketShareAssumptions({ model, visibleKeys }) {
         onSave={handleSave}
         sharingGroups={getSharingForAssumption(model, "marketShare")}
         visibleKeys={visibleKeys}
+        readOnly={readOnly}
       />
       <TotalsPanel model={model} combos={combos} savedValues={saved} allKeys={allKeys} years={years} isMonthly={isMonthly} />
     </div>

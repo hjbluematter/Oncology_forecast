@@ -1,9 +1,10 @@
 import { useForecast } from "../../store/forecastStore";
 import { buildCombos, DirectEntryPanel, getSharingForAssumption } from "./shared";
+import { apiFetch } from "../../utils/apiFetch";
 
 const API = "http://localhost:3001/api";
 
-export default function EpiAssumptions({ model, visibleKeys }) {
+export default function EpiAssumptions({ model, visibleKeys, readOnly = false }) {
   const { updateModel } = useForecast();
   const isPatientFlow = model.modelType === "Patient Flow";
 
@@ -16,7 +17,7 @@ export default function EpiAssumptions({ model, visibleKeys }) {
   const conversionType = epiType === "Prevalence" ? "stock" : "flow";
 
   async function handleSave(payload) {
-    await fetch(`${API}/models/${model.id}`, {
+    await apiFetch(`${API}/models/${model.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ epiAssumptions: payload }),
     });
@@ -49,6 +50,7 @@ export default function EpiAssumptions({ model, visibleKeys }) {
         onSave={handleSave}
         sharingGroups={getSharingForAssumption(model, "epi")}
         visibleKeys={visibleKeys}
+        readOnly={readOnly}
       />
     </div>
   );

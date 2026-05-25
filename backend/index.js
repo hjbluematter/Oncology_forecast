@@ -1,19 +1,31 @@
 require("dotenv").config();
 
 const express = require("express");
-const cors = require("cors");
-const fs = require("fs");
-const path = require("path");
-const { connect, getStatus, getDb } = require("./db/mongodb");
+const cors    = require("cors");
+const fs      = require("fs");
+const path    = require("path");
+const bcrypt  = require("bcryptjs");
 
-const app = express();
+const { connect, getStatus, getDb } = require("./db/mongodb");
+const authRoutes   = require("./routes/auth");
+const modelRoutes  = require("./routes/models");
+const adminRoutes  = require("./routes/admin");
+const { readUsers, writeUsers, readPermissions, writePermissions, migrateLocalToMongo } = require("./data/store");
+const { SALT_ROUNDS } = require("./config");
+
+const app  = express();
 const PORT = process.env.PORT || 3001;
 const DATA_FILE = path.join(__dirname, "data", "models.json");
 
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
-// ─── Local storage helpers ────────────────────────────────────────────────────
+// ─── Auth-protected routes ────────────────────────────────────────────────────
+app.use("/api/auth",   authRoutes);
+app.use("/api/models", modelRoutes);
+app.use("/api/admin",  adminRoutes);
+
+// ─── Local storage helpers (kept for cloud / portfolio endpoints) ─────────────
 
 function readModels() {
   const raw = fs.readFileSync(DATA_FILE, "utf-8");
@@ -24,50 +36,6 @@ function writeModels(models) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(models, null, 2), "utf-8");
 }
 
-// ─── Local CRUD endpoints (unchanged) ────────────────────────────────────────
-
-app.get("/api/models", (req, res) => {
-  res.json(readModels());
-});
-
-app.get("/api/models/:id", (req, res) => {
-  const models = readModels();
-  const model = models.find((m) => m.id === req.params.id);
-  if (!model) return res.status(404).json({ error: "Model not found" });
-  res.json(model);
-});
-
-app.post("/api/models", (req, res) => {
-  const models = readModels();
-  const newModel = {
-    ...req.body,
-    id: `m${Date.now()}`,
-    createdAt: new Date().toISOString().split("T")[0],
-    status: "Active",
-  };
-  models.unshift(newModel);
-  writeModels(models);
-  res.status(201).json(newModel);
-});
-
-app.patch("/api/models/:id", (req, res) => {
-  const models = readModels();
-  const idx = models.findIndex((m) => m.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: "Model not found" });
-  models[idx] = { ...models[idx], ...req.body };
-  writeModels(models);
-  res.json(models[idx]);
-});
-
-app.delete("/api/models/:id", (req, res) => {
-  const models = readModels();
-  const filtered = models.filter((m) => m.id !== req.params.id);
-  if (filtered.length === models.length)
-    return res.status(404).json({ error: "Model not found" });
-  writeModels(filtered);
-  res.json({ success: true });
-});
-
 // ─── Cloud status ─────────────────────────────────────────────────────────────
 
 app.get("/api/cloud/status", (req, res) => {
@@ -75,24 +43,16 @@ app.get("/api/cloud/status", (req, res) => {
 });
 
 // ─── Save one model to cloud ──────────────────────────────────────────────────
-// Called when user clicks "Save to Cloud" for the active model.
-// Payload: { model, forecastResults? }
-// Uses upsert on model.id so re-saves overwrite rather than duplicate.
 
 app.post("/api/cloud/save/:id", async (req, res) => {
   const db = getDb();
   if (!db) {
-    const { state, error } = getStatus();
-    if (state !== "connected") {
-      // Try connecting once more in case it wasn't attempted yet
-      await connect();
-    }
+    await connect();
     const db2 = getDb();
     if (!db2) {
       return res.status(503).json({ error: getStatus().error || "Cloud not connected" });
     }
   }
-
   try {
     const activeDb = getDb();
     const { model, forecastResults } = req.body;
@@ -100,7 +60,7 @@ app.post("/api/cloud/save/:id", async (req, res) => {
 
     const doc = {
       ...model,
-      _localId: model.id,
+      _localId:     model.id,
       cloudSavedAt: new Date().toISOString(),
       ...(forecastResults ? { forecastResults } : {}),
     };
@@ -110,7 +70,6 @@ app.post("/api/cloud/save/:id", async (req, res) => {
       doc,
       { upsert: true }
     );
-
     res.json({ success: true, cloudSavedAt: doc.cloudSavedAt });
   } catch (err) {
     console.error("Cloud save error:", err.message);
@@ -118,7 +77,7 @@ app.post("/api/cloud/save/:id", async (req, res) => {
   }
 });
 
-// ─── Migrate all local models to cloud (one-time or re-sync) ─────────────────
+// ─── Migrate all local models to cloud ───────────────────────────────────────
 
 app.post("/api/cloud/migrate", async (req, res) => {
   await connect();
@@ -126,41 +85,30 @@ app.post("/api/cloud/migrate", async (req, res) => {
   if (!db) {
     return res.status(503).json({ error: getStatus().error || "Cloud not connected" });
   }
-
   try {
     const models = readModels();
     if (models.length === 0) return res.json({ uploaded: 0 });
 
     const ops = models.map(model => ({
       replaceOne: {
-        filter: { _localId: model.id },
-        replacement: {
-          ...model,
-          _localId: model.id,
-          cloudSavedAt: new Date().toISOString(),
-        },
-        upsert: true,
+        filter:      { _localId: model.id },
+        replacement: { ...model, _localId: model.id, cloudSavedAt: new Date().toISOString() },
+        upsert:      true,
       },
     }));
-
     const result = await db.collection("models").bulkWrite(ops);
-    res.json({
-      uploaded: models.length,
-      upserted: result.upsertedCount,
-      modified: result.modifiedCount,
-    });
+    res.json({ uploaded: models.length, upserted: result.upsertedCount, modified: result.modifiedCount });
   } catch (err) {
     console.error("Migration error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ─── List all cloud-saved models (metadata only) ──────────────────────────────
+// ─── List cloud-saved models ──────────────────────────────────────────────────
 
 app.get("/api/cloud/models", async (req, res) => {
   const db = getDb();
   if (!db) return res.status(503).json({ error: getStatus().error || "Cloud not connected" });
-
   try {
     const docs = await db
       .collection("models")
@@ -200,7 +148,7 @@ app.get("/api/portfolios", async (req, res) => {
 app.post("/api/portfolios", async (req, res) => {
   const portfolio = {
     ...req.body,
-    id: `pf${Date.now()}`,
+    id:        `pf${Date.now()}`,
     createdAt: new Date().toISOString().split("T")[0],
     updatedAt: new Date().toISOString(),
   };
@@ -277,10 +225,10 @@ ${JSON.stringify(summary, null, 2)}`;
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     const response = await fetch(url, {
-      method: "POST",
+      method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+      body:    JSON.stringify({
+        contents:         [{ parts: [{ text: prompt }] }],
         generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
       }),
     });
@@ -296,11 +244,45 @@ ${JSON.stringify(summary, null, 2)}`;
   }
 });
 
+// ─── Seed default users if none exist ────────────────────────────────────────
+
+async function seedIfEmpty() {
+  await migrateLocalToMongo();
+  const users = await readUsers();
+  if (users.length > 0) return;
+
+  const defaultUsers = [
+    { id: "u1", email: "admin@oncocast.com", name: "Admin",  globalRole: "admin", password: "Admin@123"   },
+    { id: "u2", email: "p1@oncocast.com",    name: "P1",     globalRole: "user",  password: "P1@oncocast" },
+    { id: "u3", email: "p2@oncocast.com",    name: "P2",     globalRole: "user",  password: "P2@oncocast" },
+    { id: "u4", email: "p3@oncocast.com",    name: "P3",     globalRole: "user",  password: "P3@oncocast" },
+  ];
+
+  const hashed = await Promise.all(defaultUsers.map(async u => ({
+    id: u.id, email: u.email, name: u.name, globalRole: u.globalRole,
+    passwordHash: await bcrypt.hash(u.password, SALT_ROUNDS),
+    createdAt:    new Date().toISOString().split("T")[0],
+  })));
+
+  await writeUsers(hashed);
+
+  // Give all non-admin users WRITE access to every existing model
+  const models    = readModels();
+  const nonAdmins = hashed.filter(u => u.globalRole !== "admin");
+  const perms     = [];
+  for (const model of models)
+    for (const u of nonAdmins)
+      perms.push({ id: `perm-${model.id}-${u.id}`, modelId: model.id, userId: u.id, role: "WRITE" });
+  await writePermissions(perms);
+
+  console.log("✓ Seeded 4 default users (admin@oncocast.com / Admin@123)");
+}
+
 // ─── Start server ─────────────────────────────────────────────────────────────
 
 app.listen(PORT, async () => {
   console.log(`OncoCast API running at http://localhost:${PORT}`);
   console.log(`Models stored at: ${DATA_FILE}`);
-  // Attempt cloud connection on startup (non-blocking — local still works if it fails)
-  connect().catch(() => {});
+  await connect();
+  seedIfEmpty().catch(console.error);
 });

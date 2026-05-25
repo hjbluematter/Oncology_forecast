@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useForecast } from "../../store/forecastStore";
 import { buildCombos, DirectEntryPanel, getSharingForAssumption } from "./shared";
+import { apiFetch } from "../../utils/apiFetch";
 
 const API = "http://localhost:3001/api";
 
-export default function FunnelCutAssumptions({ model, visibleKeys }) {
+export default function FunnelCutAssumptions({ model, visibleKeys, readOnly = false }) {
   const { updateModel } = useForecast();
   const combos  = buildCombos(model);
   const allCuts = (model.epiFunnel ?? []).filter(f => !f.locked);
@@ -22,7 +23,7 @@ export default function FunnelCutAssumptions({ model, visibleKeys }) {
       ...(model.funnelCutValues ?? {}),
       [cutId]: payload,
     };
-    await fetch(`${API}/models/${model.id}`, {
+    await apiFetch(`${API}/models/${model.id}`, {
       method: "PATCH", headers: { "Content-Type":"application/json" },
       body: JSON.stringify({ funnelCutValues }),
     });
@@ -45,13 +46,14 @@ export default function FunnelCutAssumptions({ model, visibleKeys }) {
           savedValues={(model.funnelCutValues ?? {})[cut.id]}
           onSave={payload => saveForCut(cut.id, payload)}
           visibleKeys={visibleKeys}
+          readOnly={readOnly}
         />
       ))}
     </div>
   );
 }
 
-function CutSection({ cut, idx, combos, model, savedValues, onSave, visibleKeys }) {
+function CutSection({ cut, idx, combos, model, savedValues, onSave, visibleKeys, readOnly }) {
   const [open, setOpen] = useState(false);
 
   const isAbsolute = cut.operator === "add" || cut.operator === "subtract";
@@ -94,6 +96,7 @@ function CutSection({ cut, idx, combos, model, savedValues, onSave, visibleKeys 
             onSave={onSave}
             sharingGroups={getSharingForAssumption(model, `funnel_${cut.id ?? cut.name}`)}
             visibleKeys={visibleKeys}
+            readOnly={readOnly}
           />
         </div>
       )}
