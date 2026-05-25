@@ -385,6 +385,48 @@ export function runForecast(model) {
     }
   }
 
+  // ─── Derived geographies: RoE (from EU5) and RoW (from US) ──────────────────
+  const eu5GeoIdx = geos.findIndex(g => g.toLowerCase() === "eu5");
+  const usGeoIdx  = geos.findIndex(g => g.toLowerCase() === "us");
+
+  // roeByLot / rowByLot: { [lotLabel]: { [period]: { nps, revenue } } }
+  const roeByLot = {};
+  const rowByLot = {};
+
+  if (model.showRestOfEurope && eu5GeoIdx >= 0) {
+    for (let l = 0; l < lots; l++) {
+      const lotLabel = `${l + 1}L`;
+      roeByLot[lotLabel] = {};
+      for (const period of periods) {
+        let srcNPS = 0, srcRev = 0;
+        for (let s = 0; s < segs; s++) {
+          srcNPS += nps[`${eu5GeoIdx}-${l}-${s}-0`]?.[period] ?? 0;
+          srcRev += revenue[`${eu5GeoIdx}-${l}-${s}-0`]?.[period] ?? 0;
+        }
+        const npsF = parseFloat(String(model.roeAssumptions?.[period]?.nps ?? 0).replace(/,/g, "")) / 100;
+        const revF = parseFloat(String(model.roeAssumptions?.[period]?.revenue ?? 0).replace(/,/g, "")) / 100;
+        roeByLot[lotLabel][period] = { nps: srcNPS * (isNaN(npsF) ? 0 : npsF), revenue: srcRev * (isNaN(revF) ? 0 : revF) };
+      }
+    }
+  }
+
+  if (model.showRestOfWorld && usGeoIdx >= 0) {
+    for (let l = 0; l < lots; l++) {
+      const lotLabel = `${l + 1}L`;
+      rowByLot[lotLabel] = {};
+      for (const period of periods) {
+        let srcNPS = 0, srcRev = 0;
+        for (let s = 0; s < segs; s++) {
+          srcNPS += nps[`${usGeoIdx}-${l}-${s}-0`]?.[period] ?? 0;
+          srcRev += revenue[`${usGeoIdx}-${l}-${s}-0`]?.[period] ?? 0;
+        }
+        const npsF = parseFloat(String(model.rowAssumptions?.[period]?.nps ?? 0).replace(/,/g, "")) / 100;
+        const revF = parseFloat(String(model.rowAssumptions?.[period]?.revenue ?? 0).replace(/,/g, "")) / 100;
+        rowByLot[lotLabel][period] = { nps: srcNPS * (isNaN(npsF) ? 0 : npsF), revenue: srcRev * (isNaN(revF) ? 0 : revF) };
+      }
+    }
+  }
+
   // ─── Aggregates ────────────────────────────────────────────────────────────
   const totalRevenue = {};
   const totalNPS = {};
@@ -444,5 +486,7 @@ export function runForecast(model) {
     revenueByLot,
     revenueByGeo,
     traceData,
+    roeByLot,
+    rowByLot,
   };
 }

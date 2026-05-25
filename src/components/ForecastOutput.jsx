@@ -31,17 +31,21 @@ function SummaryCard({ label, value, sub }) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl px-5 py-4 flex flex-col gap-1">
       <p className="text-slate-500 text-xs">{label}</p>
-      <p className="text-white text-xl font-semibold tabular-nums">{value}</p>
+      <p className="text-slate-100 text-xl font-semibold tabular-nums">{value}</p>
       {sub && <p className="text-slate-500 text-xs">{sub}</p>}
     </div>
   );
 }
 
-function CustomTooltip({ active, payload, label }) {
+function CustomTooltip({ active, payload, label, metric }) {
   if (!active || !payload?.length) return null;
   const total = payload.reduce((s, e) => s + (e.value ?? 0), 0);
+  function fmtTip(v) {
+    if (metric === "revenue") return fmtRevenue(v * 1_000_000);
+    return fmtInt(v);
+  }
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs shadow-xl">
+    <div className="bg-[#1e293b] border border-slate-600 rounded-lg p-3 text-xs shadow-xl">
       <p className="text-slate-300 font-medium mb-2">{label}</p>
       {payload.map(e => (
         <div key={e.name} className="flex items-center justify-between gap-4">
@@ -49,13 +53,13 @@ function CustomTooltip({ active, payload, label }) {
             <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: e.color }} />
             <span className="text-slate-400">{e.name}</span>
           </span>
-          <span className="text-white tabular-nums">{fmtRevenue((e.value ?? 0) * 1_000_000)}</span>
+          <span className="text-white tabular-nums">{fmtTip(e.value ?? 0)}</span>
         </div>
       ))}
       {payload.length > 1 && (
         <div className="mt-2 pt-2 border-t border-slate-700 flex justify-between">
           <span className="text-slate-400">Total</span>
-          <span className="text-white tabular-nums">{fmtRevenue(total * 1_000_000)}</span>
+          <span className="text-white tabular-nums">{fmtTip(total)}</span>
         </div>
       )}
     </div>
@@ -141,7 +145,7 @@ function buildTraceRows(model, results, key3, isIncidence, isPatientFlow) {
     label: isIncidence ? "New Patient Starts (NPS)" : "Total Patients",
     getValue: p => results.traceData[key3]?.[p]?.nps ?? 0,
     fmt: v => fmtNum(v), aggregate: "sum",
-    color: "text-violet-200",
+    color: "text-violet-700",
   });
 
   // ── Section: Duration of Therapy ───────────────────────────────────────
@@ -204,7 +208,7 @@ function buildTraceRows(model, results, key3, isIncidence, isPatientFlow) {
     { id: "vials",       label: "Vials / Patient-Month",   fmt: v => fmtNum(v, 2), key: "vialsPerPM", color: "text-slate-300", agg: "avg" },
     { id: "gross",       label: "Gross Price / Vial",      fmt: fmtPrice, key: "grossPrice",  color: "text-slate-300",   agg: "avg" },
     { id: "gtn",         label: "GTN (1 − x)",        fmt: fmtPct,   key: "gtn",         color: "text-slate-300",   agg: "avg" },
-    { id: "net",         label: "Net Price / Vial",        fmt: fmtPrice, key: "netPrice",    color: "text-emerald-300", agg: "avg" },
+    { id: "net",         label: "Net Price / Vial",        fmt: fmtPrice, key: "netPrice",    color: "text-emerald-700", agg: "avg" },
   ].forEach(row => {
     rows.push({ type: "data", label: row.label, getValue: p => results.traceData[key3]?.[p]?.[row.key] ?? 0, fmt: row.fmt, aggregate: row.agg, color: row.color, indent: row.id !== "net" });
   });
@@ -343,14 +347,14 @@ function ComboDetailSection({ model, results }) {
                     <td className={`sticky left-0 px-4 py-2 border-r border-slate-800 whitespace-nowrap ${rowBg}`}>
                       <div className={row.indent ? "pl-4" : ""}>
                         <p className={`font-medium leading-tight ${row.color}`}>{row.label}</p>
-                        {row.sublabel && <p className="text-slate-600 text-xs font-mono">{row.sublabel}</p>}
+                        {row.sublabel && <p className="text-slate-400 text-xs font-mono">{row.sublabel}</p>}
                       </div>
                     </td>
                     {displayPeriods.map(p => {
                       const v = getVal(row, p);
                       return (
                         <td key={p} className={`text-right px-3 py-2 tabular-nums ${row.type === "total" ? "text-violet-300 font-semibold" : row.type === "subtotal" ? row.color + " font-medium" : row.color}`}>
-                          {v !== null ? row.fmt(v) : <span className="text-slate-700">—</span>}
+                          {v !== null ? row.fmt(v) : <span className="text-slate-500">—</span>}
                         </td>
                       );
                     })}
@@ -371,6 +375,254 @@ function ComboDetailSection({ model, results }) {
   );
 }
 
+// ─── Detailed Results — periods as columns, rows = LOT × Geo ─────────────────
+
+function DetailedResultsTables({ model, results }) {
+  const geos = model.geographies?.length > 0 ? model.geographies : ["Global"];
+  const lots = model.linesOfTherapy ?? 1;
+  const segs = model.segments ?? 1;
+  const lotLabels = Array.from({ length: lots }, (_, i) => `${i + 1}L`);
+  const isMonthlyModel = model.granularity === "Monthly";
+
+  // Controls
+  const [metric, setMetric] = useState("revenue");
+  const [granularity, setGranularity] = useState("yearly");
+
+  const showRoE = model.showRestOfEurope && Object.keys(results.roeByLot ?? {}).length > 0;
+  const showRoW = model.showRestOfWorld && Object.keys(results.rowByLot ?? {}).length > 0;
+
+  // Display periods — yearly or monthly
+  const displayPeriods = (!isMonthlyModel || granularity === "yearly")
+    ? results.years.map(String)
+    : results.periods;
+
+  // Aggregate over months if showing yearly in a monthly model
+  function agg(keyFn, dp) {
+    if (!isMonthlyModel || granularity === "monthly") return keyFn(dp) ?? 0;
+    const keys = results.periods.filter(p => p.startsWith(dp + "-"));
+    return keys.reduce((s, p) => s + (keyFn(p) ?? 0), 0);
+  }
+
+  // Get value for a geo × lot combination
+  function geoLotVal(gIdx, lotIdx, dp) {
+    if (metric === "revenue") {
+      return agg(p => { let v = 0; for (let s = 0; s < segs; s++) v += results.revenue[`${gIdx}-${lotIdx}-${s}-0`]?.[p] ?? 0; return v; }, dp);
+    }
+    if (metric === "nps") {
+      return agg(p => { let v = 0; for (let s = 0; s < segs; s++) v += results.nps[`${gIdx}-${lotIdx}-${s}-0`]?.[p] ?? 0; return v; }, dp);
+    }
+    // vials
+    return agg(p => { let v = 0; for (let s = 0; s < segs; s++) v += results.vials[`${gIdx}-${lotIdx}-${s}-0`]?.[p] ?? 0; return v; }, dp);
+  }
+
+  function derivedVal(byLot, lotLabel, dp) {
+    if (metric === "revenue") return agg(p => byLot[lotLabel]?.[p]?.revenue ?? 0, dp);
+    if (metric === "nps")     return agg(p => byLot[lotLabel]?.[p]?.nps     ?? 0, dp);
+    return 0; // vials not available for derived geos
+  }
+
+  function fmt(v) {
+    return metric === "revenue" ? fmtRevenue(v) : fmtInt(v);
+  }
+
+  // Build row definitions
+  const rowDefs = [];
+  for (let li = 0; li < lots; li++) {
+    const lotLabel = lotLabels[li];
+    // section divider
+    rowDefs.push({ type: "lot", lotLabel, lotIdx: li });
+    // regular geos
+    for (let gi = 0; gi < geos.length; gi++) {
+      rowDefs.push({ type: "geo", geoLabel: geos[gi], geoIdx: gi, lotIdx: li, lotLabel });
+    }
+    // derived geos
+    if (showRoE) rowDefs.push({ type: "roe", lotLabel, lotIdx: li });
+    if (showRoW) rowDefs.push({ type: "row", lotLabel, lotIdx: li });
+    // lot subtotal
+    rowDefs.push({ type: "lot-total", lotLabel, lotIdx: li });
+  }
+  // grand total
+  rowDefs.push({ type: "grand-total" });
+
+  // Column width
+  const COL_W = granularity === "monthly" ? 80 : 96;
+  const LABEL_W = 190;
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+      {/* Controls bar */}
+      <div className="px-5 py-3 border-b border-slate-800 flex flex-wrap items-center gap-4">
+        <div>
+          <p className="text-slate-200 text-sm font-medium">Detailed Results</p>
+          <p className="text-slate-500 text-xs mt-0.5">Geography × Line of Therapy · asset only</p>
+        </div>
+        <div className="ml-auto flex items-center gap-3">
+          {/* Metric toggle */}
+          <div className="flex items-center bg-slate-800 rounded-lg p-0.5 gap-0.5">
+            {[
+              { id: "revenue", label: "Revenue" },
+              { id: "nps",     label: "New Patients" },
+              { id: "vials",   label: "Vials" },
+            ].map(m => (
+              <button
+                key={m.id}
+                onClick={() => setMetric(m.id)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  metric === m.id ? "bg-violet-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Granularity toggle — only for monthly models */}
+          {isMonthlyModel && (
+            <div className="flex items-center bg-slate-800 rounded-lg p-0.5 gap-0.5">
+              {[{ id: "yearly", label: "Yearly" }, { id: "monthly", label: "Monthly" }].map(g => (
+                <button
+                  key={g.id}
+                  onClick={() => setGranularity(g.id)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    granularity === g.id ? "bg-violet-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Table — periods as columns */}
+      <div className="overflow-auto" style={{ maxHeight: 560 }}>
+        <table className="border-collapse text-xs" style={{ minWidth: LABEL_W + displayPeriods.length * COL_W + COL_W }}>
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-[#dbe8f8] border-b border-[#b3cce8]">
+              <th className="sticky left-0 text-left px-4 py-2.5 font-semibold border-r border-[#b3cce8] whitespace-nowrap bg-[#dbe8f8] text-slate-100" style={{ minWidth: LABEL_W }}>
+                Geography / Line
+              </th>
+              {displayPeriods.map(dp => (
+                <th key={dp} className="text-right px-3 py-2.5 font-medium whitespace-nowrap text-slate-200" style={{ minWidth: COL_W }}>
+                  {periodLabel(dp)}
+                </th>
+              ))}
+              <th className="text-right px-3 py-2.5 font-semibold whitespace-nowrap border-l border-[#b3cce8] text-slate-100" style={{ minWidth: COL_W }}>
+                Total
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rowDefs.map((row, ri) => {
+              // ── LOT section header ──────────────────────────────────────────
+              if (row.type === "lot") {
+                return (
+                  <tr key={`lot-${row.lotLabel}`} className="border-t border-[#bfdbfe]">
+                    <td colSpan={displayPeriods.length + 2} className="px-4 py-1.5 bg-[#eff6ff]">
+                      <span className="text-violet-600 font-bold text-xs tracking-wide">{row.lotLabel}</span>
+                    </td>
+                  </tr>
+                );
+              }
+
+              // ── LOT subtotal row ────────────────────────────────────────────
+              if (row.type === "lot-total") {
+                const vals = displayPeriods.map(dp => {
+                  let v = 0;
+                  for (let gi = 0; gi < geos.length; gi++) v += geoLotVal(gi, row.lotIdx, dp);
+                  if (showRoE) v += derivedVal(results.roeByLot, row.lotLabel, dp);
+                  if (showRoW) v += derivedVal(results.rowByLot, row.lotLabel, dp);
+                  return v;
+                });
+                const total = vals.reduce((s, v) => s + v, 0);
+                return (
+                  <tr key={`lot-total-${row.lotLabel}`} className="border-t border-[#bfdbfe] border-b-2 border-b-[#bfdbfe]">
+                    <td className="sticky left-0 px-4 py-2 font-semibold border-r border-[#bfdbfe] bg-[#dbeafe] text-violet-700 whitespace-nowrap pl-4">
+                      {row.lotLabel} Total
+                    </td>
+                    {vals.map((v, i) => (
+                      <td key={i} className="text-right px-3 py-2 tabular-nums font-semibold bg-[#dbeafe] text-violet-700">
+                        {fmt(v)}
+                      </td>
+                    ))}
+                    <td className="text-right px-3 py-2 tabular-nums font-semibold bg-[#dbeafe] text-violet-700 border-l border-[#bfdbfe]">
+                      {fmt(total)}
+                    </td>
+                  </tr>
+                );
+              }
+
+              // ── Grand total row ─────────────────────────────────────────────
+              if (row.type === "grand-total") {
+                const vals = displayPeriods.map(dp => {
+                  let v = 0;
+                  for (let li = 0; li < lots; li++) {
+                    for (let gi = 0; gi < geos.length; gi++) v += geoLotVal(gi, li, dp);
+                    if (showRoE) v += derivedVal(results.roeByLot, lotLabels[li], dp);
+                    if (showRoW) v += derivedVal(results.rowByLot, lotLabels[li], dp);
+                  }
+                  return v;
+                });
+                const total = vals.reduce((s, v) => s + v, 0);
+                return (
+                  <tr key="grand-total" className="border-t-2 border-[#a5b4fc]">
+                    <td className="sticky left-0 px-4 py-2.5 font-bold border-r border-[#c4b5fd] bg-[#ede9fe] text-violet-800 whitespace-nowrap">
+                      Grand Total
+                    </td>
+                    {vals.map((v, i) => (
+                      <td key={i} className="text-right px-3 py-2.5 tabular-nums font-bold bg-[#ede9fe] text-violet-800">
+                        {fmt(v)}
+                      </td>
+                    ))}
+                    <td className="text-right px-3 py-2.5 tabular-nums font-bold bg-[#ede9fe] text-violet-800 border-l border-[#c4b5fd]">
+                      {fmt(total)}
+                    </td>
+                  </tr>
+                );
+              }
+
+              // ── Regular geo or derived geo data row ─────────────────────────
+              const isEven = ri % 2 === 0;
+              const bg       = isEven ? "#ffffff" : "#f0f6ff";
+              const stickyBg = isEven ? "#ffffff" : "#e8f0fd";
+
+              let label = "";
+              if (row.type === "geo")  label = row.geoLabel;
+              if (row.type === "roe")  label = "RoE";
+              if (row.type === "row")  label = "RoW";
+
+              const vals = displayPeriods.map(dp => {
+                if (row.type === "geo") return geoLotVal(row.geoIdx, row.lotIdx, dp);
+                if (row.type === "roe") return derivedVal(results.roeByLot, row.lotLabel, dp);
+                if (row.type === "row") return derivedVal(results.rowByLot, row.lotLabel, dp);
+                return 0;
+              });
+              const rowTotal = vals.reduce((s, v) => s + v, 0);
+
+              return (
+                <tr key={`${row.type}-${row.lotLabel}-${label}`} style={{ background: bg }} className="border-b border-[#d1e0f5]">
+                  <td className="sticky left-0 px-4 py-2 text-slate-200 font-medium whitespace-nowrap border-r border-[#d1e0f5] pl-8" style={{ background: stickyBg }}>
+                    {label}
+                  </td>
+                  {vals.map((v, i) => (
+                    <td key={i} className="text-right px-3 py-2 tabular-nums text-slate-100">
+                      {fmt(v)}
+                    </td>
+                  ))}
+                  <td className="text-right px-3 py-2 tabular-nums text-slate-200 font-medium border-l border-[#d1e0f5]">
+                    {fmt(rowTotal)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main output component ────────────────────────────────────────────────────
 
 export default function ForecastOutput({ model }) {
@@ -378,11 +630,14 @@ export default function ForecastOutput({ model }) {
   const [lastRun, setLastRun] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [chartMetric, setChartMetric] = useState("revenue");
+  const [chartGranularity, setChartGranularity] = useState("yearly");
+
+  const isMonthlyModel = (model.granularity ?? "Yearly") === "Monthly";
 
   function handleRun() {
     setLoading(true);
     setError(null);
-    // Run synchronously but defer to next tick so spinner renders
     setTimeout(() => {
       try {
         const r = runForecast(model);
@@ -398,32 +653,44 @@ export default function ForecastOutput({ model }) {
 
   const lots = model.linesOfTherapy ?? 1;
   const lotLabels = Array.from({ length: lots }, (_, i) => `${i + 1}L`);
+  const geoCount = model.geographies?.length > 0 ? model.geographies.length : 1;
+  const segs = model.segments ?? 1;
 
-  // Build chart data (aggregate by year for readability in monthly models)
-  const chartData = results
-    ? (() => {
-        const isMonthly = (model.granularity ?? "Yearly") === "Monthly";
-        if (!isMonthly) {
-          return results.periods.map(p => {
-            const row = { period: p };
-            for (const ll of lotLabels) {
-              row[ll] = ((results.revenueByLot[ll]?.[p] ?? 0) / 1_000_000);
-            }
-            return row;
-          });
-        }
-        // Monthly: aggregate to yearly for chart
-        const byYear = {};
-        for (const p of results.periods) {
-          const y = p.split("-")[0];
-          if (!byYear[y]) { byYear[y] = { period: y }; for (const ll of lotLabels) byYear[y][ll] = 0; }
-          for (const ll of lotLabels) {
-            byYear[y][ll] += (results.revenueByLot[ll]?.[p] ?? 0) / 1_000_000;
+  // Build chart data — metric-aware, granularity-aware
+  const chartData = useMemo(() => {
+    if (!results) return [];
+    const showMonthly = isMonthlyModel && chartGranularity === "monthly";
+    const periodKeys = showMonthly ? results.periods : (isMonthlyModel ? results.years.map(String) : results.periods);
+
+    function lotVal(ll, p) {
+      const lotIdx = parseInt(ll) - 1;
+      if (chartMetric === "revenue") {
+        if (showMonthly || !isMonthlyModel) return (results.revenueByLot[ll]?.[p] ?? 0) / 1_000_000;
+        // aggregate months to year
+        return results.periods.filter(mp => mp.startsWith(p + "-"))
+          .reduce((s, mp) => s + (results.revenueByLot[ll]?.[mp] ?? 0), 0) / 1_000_000;
+      }
+      // NPS or Vials — sum across geos × segs
+      let v = 0;
+      const pList = (showMonthly || !isMonthlyModel) ? [p] : results.periods.filter(mp => mp.startsWith(p + "-"));
+      for (const pp of pList) {
+        for (let g = 0; g < geoCount; g++) {
+          for (let s = 0; s < segs; s++) {
+            const k4 = `${g}-${lotIdx}-${s}-0`;
+            if (chartMetric === "nps")   v += results.nps[k4]?.[pp]   ?? 0;
+            if (chartMetric === "vials") v += results.vials[k4]?.[pp] ?? 0;
           }
         }
-        return Object.values(byYear);
-      })()
-    : [];
+      }
+      return v;
+    }
+
+    return periodKeys.map(p => {
+      const row = { period: periodLabel(p) };
+      for (const ll of lotLabels) row[ll] = lotVal(ll, p);
+      return row;
+    });
+  }, [results, chartMetric, chartGranularity]);
 
   // Peak year revenue
   const peakRevenue = results
@@ -500,28 +767,55 @@ export default function ForecastOutput({ model }) {
             />
           </div>
 
-          {/* Revenue Chart */}
+          {/* Chart */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-800">
-              <p className="text-slate-200 text-sm font-medium">Revenue Over Time</p>
-              <p className="text-slate-500 text-xs mt-0.5">Stacked by line of therapy · $M</p>
+            <div className="px-5 py-4 border-b border-slate-800 flex flex-wrap items-center gap-3">
+              <div>
+                <p className="text-slate-200 text-sm font-medium">Forecast Over Time</p>
+                <p className="text-slate-500 text-xs mt-0.5">Stacked by line of therapy</p>
+              </div>
+              <div className="ml-auto flex items-center gap-2 flex-wrap">
+                {/* Metric tabs */}
+                <div className="flex items-center bg-slate-800 rounded-lg p-0.5 gap-0.5">
+                  {[
+                    { id: "revenue", label: "Revenue" },
+                    { id: "nps",     label: "New Patients" },
+                    { id: "vials",   label: "Vials" },
+                  ].map(m => (
+                    <button key={m.id} onClick={() => setChartMetric(m.id)}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${chartMetric === m.id ? "bg-violet-600 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
+                    >{m.label}</button>
+                  ))}
+                </div>
+                {/* Granularity (monthly models only) */}
+                {isMonthlyModel && (
+                  <div className="flex items-center bg-slate-800 rounded-lg p-0.5 gap-0.5">
+                    {[{ id: "yearly", label: "Yearly" }, { id: "monthly", label: "Monthly" }].map(g => (
+                      <button key={g.id} onClick={() => setChartGranularity(g.id)}
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${chartGranularity === g.id ? "bg-violet-600 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
+                      >{g.label}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="p-5">
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={chartData} margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis dataKey="period" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="period" tick={{ fill: "#334155", fontSize: 11 }} />
                   <YAxis
-                    tick={{ fill: "#94a3b8", fontSize: 11 }}
-                    tickFormatter={v => `$${v.toFixed(1)}M`}
+                    tick={{ fill: "#334155", fontSize: 11 }}
+                    tickFormatter={v =>
+                      chartMetric === "revenue"
+                        ? `$${v.toFixed(1)}M`
+                        : v >= 1000 ? `${(v/1000).toFixed(0)}K` : String(Math.round(v))
+                    }
                   />
-                  <Tooltip content={<CustomTooltip />} />
-                  {lots > 1 && <Legend wrapperStyle={{ fontSize: 12, color: "#94a3b8" }} />}
+                  <Tooltip content={<CustomTooltip metric={chartMetric} />} />
+                  {lots > 1 && <Legend wrapperStyle={{ fontSize: 12, color: "#334155" }} />}
                   {lotLabels.map((ll, i) => (
-                    <Bar
-                      key={ll}
-                      dataKey={ll}
-                      stackId="rev"
+                    <Bar key={ll} dataKey={ll} stackId="a"
                       fill={LOT_COLORS[i % LOT_COLORS.length]}
                       radius={i === lots - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]}
                     />
@@ -534,108 +828,8 @@ export default function ForecastOutput({ model }) {
           {/* Combo Detail */}
           <ComboDetailSection model={model} results={results} />
 
-          {/* Detailed Table */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-800">
-              <p className="text-slate-200 text-sm font-medium">Detailed Results</p>
-              <p className="text-slate-500 text-xs mt-0.5">Per period · asset only</p>
-            </div>
-            <div className="overflow-auto max-h-[480px]">
-              <table className="w-full text-xs border-collapse">
-                <thead className="sticky top-0 z-10">
-                  <tr className="bg-slate-800 border-b border-slate-700">
-                    <th className="text-left px-4 py-2.5 text-slate-300 font-medium whitespace-nowrap sticky left-0 bg-slate-800 border-r border-slate-700">
-                      Period
-                    </th>
-                    {lots > 1 ? (
-                      lotLabels.flatMap(ll => [
-                        <th key={`nps-${ll}`} className="text-right px-3 py-2.5 text-slate-300 font-medium whitespace-nowrap">NPS {ll}</th>,
-                        <th key={`vials-${ll}`} className="text-right px-3 py-2.5 text-slate-300 font-medium whitespace-nowrap">Vials {ll}</th>,
-                        <th key={`rev-${ll}`} className="text-right px-3 py-2.5 text-slate-300 font-medium whitespace-nowrap">Rev {ll}</th>,
-                      ])
-                    ) : (
-                      <>
-                        <th className="text-right px-3 py-2.5 text-slate-300 font-medium whitespace-nowrap">NPS</th>
-                        <th className="text-right px-3 py-2.5 text-slate-300 font-medium whitespace-nowrap">Vials</th>
-                        <th className="text-right px-3 py-2.5 text-slate-300 font-medium whitespace-nowrap">Revenue</th>
-                      </>
-                    )}
-                    {lots > 1 && (
-                      <>
-                        <th className="text-right px-3 py-2.5 text-violet-400 font-medium whitespace-nowrap border-l border-slate-700">Total NPS</th>
-                        <th className="text-right px-3 py-2.5 text-violet-400 font-medium whitespace-nowrap">Total Vials</th>
-                        <th className="text-right px-3 py-2.5 text-violet-400 font-medium whitespace-nowrap">Total Rev</th>
-                      </>
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {results.periods.map((period, i) => {
-                    const isEven = i % 2 === 0;
-                    const rowBg = isEven ? "bg-slate-950" : "bg-slate-900/60";
-
-                    if (lots > 1) {
-                      // Per-lot NPS, PM, Revenue
-                      const geos = (model.geographies?.length > 0 ? model.geographies : ["Global"]);
-                      const segs = model.segments ?? 1;
-
-                      return (
-                        <tr key={period} className={`border-b border-slate-800/60 ${rowBg}`}>
-                          <td className={`px-4 py-2 text-slate-400 whitespace-nowrap sticky left-0 border-r border-slate-800 ${rowBg}`}>
-                            {periodLabel(period)}
-                          </td>
-                          {lotLabels.flatMap(ll => {
-                            const lotIdx = parseInt(ll) - 1;
-                            // Sum over all geo × seg combos for this lot (asset only)
-                            let lotNPS = 0, lotVials = 0, lotRev = 0;
-                            for (let g = 0; g < geos.length; g++) {
-                              for (let s = 0; s < segs; s++) {
-                                const k4 = `${g}-${lotIdx}-${s}-0`;
-                                lotNPS += results.nps[k4]?.[period] ?? 0;
-                                lotVials += results.vials[k4]?.[period] ?? 0;
-                                lotRev += results.revenue[k4]?.[period] ?? 0;
-                              }
-                            }
-                            return [
-                              <td key={`nps-${ll}`} className="text-right px-3 py-2 text-slate-300 tabular-nums">{fmtInt(lotNPS)}</td>,
-                              <td key={`vials-${ll}`} className="text-right px-3 py-2 text-slate-300 tabular-nums">{fmtInt(lotVials)}</td>,
-                              <td key={`rev-${ll}`} className="text-right px-3 py-2 text-slate-300 tabular-nums">{fmtRevenue(lotRev)}</td>,
-                            ];
-                          })}
-                          <td className="text-right px-3 py-2 text-violet-300 tabular-nums font-medium border-l border-slate-800">
-                            {fmtInt(results.totalNPS[period] ?? 0)}
-                          </td>
-                          <td className="text-right px-3 py-2 text-violet-300 tabular-nums font-medium">
-                            {fmtInt(results.totalVials[period] ?? 0)}
-                          </td>
-                          <td className="text-right px-3 py-2 text-violet-300 tabular-nums font-medium">
-                            {fmtRevenue(results.totalRevenue[period] ?? 0)}
-                          </td>
-                        </tr>
-                      );
-                    }
-
-                    return (
-                      <tr key={period} className={`border-b border-slate-800/60 ${rowBg}`}>
-                        <td className={`px-4 py-2 text-slate-400 whitespace-nowrap sticky left-0 border-r border-slate-800 ${rowBg}`}>
-                          {periodLabel(period)}
-                        </td>
-                        <td className="text-right px-3 py-2 text-slate-300 tabular-nums">
-                          {fmtInt(results.totalNPS[period] ?? 0)}
-                        </td>
-                        <td className="text-right px-3 py-2 text-slate-300 tabular-nums">
-                          {fmtInt(results.totalVials[period] ?? 0)}
-                        </td>
-                        <td className="text-right px-3 py-2 text-violet-300 tabular-nums font-medium">
-                          {fmtRevenue(results.totalRevenue[period] ?? 0)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* Detailed Tables — one per LOT */}
+          <DetailedResultsTables model={model} results={results} />
         </>
       )}
 

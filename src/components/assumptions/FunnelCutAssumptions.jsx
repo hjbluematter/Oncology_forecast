@@ -11,7 +11,7 @@ export default function FunnelCutAssumptions({ model, visibleKeys }) {
 
   if (allCuts.length === 0) {
     return (
-      <div className="px-5 py-8 text-center text-slate-600 text-sm">
+      <div className="px-5 py-8 text-center text-slate-400 text-sm">
         No funnel cuts configured — add steps in model setup.
       </div>
     );
@@ -70,7 +70,7 @@ function CutSection({ cut, idx, combos, model, savedValues, onSave, visibleKeys 
           </span>
           <div>
             <p className="text-slate-200 text-sm font-medium">{cut.label || `Funnel Cut ${idx+1}`}</p>
-            <p className="text-slate-600 text-xs">
+            <p className="text-slate-400 text-xs">
               {cut.description}
               {" "}· operator: <span className={`font-mono ${opColor}`}>{opSymbol}</span>
               {" "}· {isAbsolute ? "absolute patients" : "rate (%)"}

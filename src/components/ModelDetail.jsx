@@ -9,8 +9,10 @@ import PersistencyAssumptions from "./assumptions/PersistencyAssumptions";
 import ProgressionAssumptions from "./assumptions/ProgressionAssumptions";
 import OperationalAssumptions from "./assumptions/OperationalAssumptions";
 import InputSharingAssumptions from "./assumptions/InputSharingAssumptions";
+import RoeRowAssumptions from "./assumptions/RoeRowAssumptions";
 import { buildCombos, ComboFilter, filterCombos } from "./assumptions/shared";
 import ForecastOutput from "./ForecastOutput";
+import ScenarioManager from "./ScenarioManager";
 
 const TABS = [
   { id: "assumptions", label: "Assumptions" },
@@ -140,7 +142,7 @@ export default function ModelDetail() {
             { label: "Geographies", value: activeModel.geographies?.length ?? "—" },
           ].map(item => (
             <div key={item.label} className="shrink-0">
-              <p className="text-slate-600 text-xs">{item.label}</p>
+              <p className="text-slate-200 text-xs">{item.label}</p>
               <p className="text-slate-300 text-sm font-medium">{item.value}</p>
             </div>
           ))}
@@ -157,7 +159,7 @@ export default function ModelDetail() {
               className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === tab.id
                   ? "border-violet-500 text-violet-300"
-                  : "border-transparent text-slate-500 hover:text-slate-300"
+                  : "border-transparent text-slate-300 hover:text-slate-100"
               }`}
             >
               {tab.label}
@@ -170,7 +172,7 @@ export default function ModelDetail() {
         {activeTab === "assumptions" && <AssumptionsTab model={activeModel} />}
         {activeTab === "sharing" && <SharingTab model={activeModel} />}
         {activeTab === "forecast" && <ForecastOutput model={activeModel} />}
-        {activeTab === "scenarios" && <PlaceholderTab label="Scenario Runner" description="Natural language scenario execution and side-by-side comparison will live here." />}
+        {activeTab === "scenarios" && <ScenarioManager model={activeModel} />}
       </main>
     </div>
   );
@@ -275,6 +277,21 @@ function AssumptionsTab({ model }) {
       >
         <OperationalAssumptions model={model} visibleKeys={visibleKeys} />
       </AssumptionSection>
+
+      {/* RoE / RoW derived geography scaling — shown for all models (component self-hides if not applicable) */}
+      {(model.showRestOfEurope || model.showRestOfWorld) && (
+        <AssumptionSection
+          title="Rest of Europe & Rest of World Scaling"
+          subtitle="NPS and revenue multipliers applied to EU5 (RoE) and US (RoW)"
+          icon={
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
+            </svg>
+          }
+        >
+          <RoeRowAssumptions model={model} />
+        </AssumptionSection>
+      )}
     </div>
   );
 }
@@ -297,13 +314,13 @@ function AssumptionSection({ title, subtitle, icon, locked, children }) {
           <div>
             <p className="text-slate-200 text-sm font-medium flex items-center gap-2">
               {title}
-              {locked && <span className="text-slate-600 text-xs font-normal">(coming soon)</span>}
+              {locked && <span className="text-slate-500 text-xs font-normal">(coming soon)</span>}
             </p>
-            <p className="text-slate-500 text-xs">{subtitle}</p>
+            <p className="text-slate-300 text-xs">{subtitle}</p>
           </div>
         </div>
         {!locked && (
-          <svg className={`w-4 h-4 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className={`w-4 h-4 text-slate-300 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
           </svg>
         )}
@@ -323,7 +340,7 @@ function PlaceholderTab({ label, description }) {
       </div>
       <div className="text-center">
         <p className="text-slate-300 font-semibold">{label}</p>
-        <p className="text-slate-500 text-sm mt-1 max-w-md">{description}</p>
+        <p className="text-slate-200 text-sm mt-1 max-w-md">{description}</p>
       </div>
     </div>
   );

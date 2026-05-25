@@ -131,7 +131,7 @@ export default function Dashboard() {
         {/* Page header */}
         <div className="mb-8">
           <h1 className="text-2xl font-semibold text-slate-100">Forecast Models</h1>
-          <p className="text-slate-400 mt-1 text-sm">
+          <p className="text-slate-200 mt-1 text-sm">
             {loading ? "Loading…" : `${models.length} model${models.length !== 1 ? "s" : ""} across your oncology pipeline portfolio`}
           </p>
         </div>
@@ -145,9 +145,9 @@ export default function Dashboard() {
             { label: "Lines of Therapy", value: loading || !models.length ? "—" : Math.max(...models.map(m => m.linesOfTherapy)), sub: "max across portfolio" },
           ].map(stat => (
             <div key={stat.label} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-              <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">{stat.label}</p>
+              <p className="text-slate-200 text-xs uppercase tracking-wider mb-1">{stat.label}</p>
               <p className="text-slate-100 text-2xl font-semibold">{stat.value}</p>
-              <p className="text-slate-500 text-xs mt-1">{stat.sub}</p>
+              <p className="text-slate-300 text-xs mt-1">{stat.sub}</p>
             </div>
           ))}
         </div>
@@ -207,7 +207,7 @@ function ModelCard({ model, onClick, onEdit, onDelete }) {
             <h3 className="text-slate-100 font-semibold text-sm group-hover:text-violet-300 transition-colors truncate">
               {model.assetName}
             </h3>
-            <p className="text-slate-500 text-xs mt-0.5 truncate">{model.indication}</p>
+            <p className="text-slate-300 text-xs mt-0.5 truncate">{model.indication}</p>
           </div>
         </button>
 
@@ -220,7 +220,7 @@ function ModelCard({ model, onClick, onEdit, onDelete }) {
           <div className="relative">
             <button
               onClick={e => { e.stopPropagation(); setMenuOpen(o => !o); }}
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-200 hover:bg-slate-700 transition-colors"
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-slate-100 hover:bg-slate-700 transition-colors"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                 <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
@@ -268,8 +268,8 @@ function ModelCard({ model, onClick, onEdit, onDelete }) {
           { label: "Segments", value: model.segments },
         ].map(item => (
           <div key={item.label}>
-            <p className="text-slate-500 text-xs">{item.label}</p>
-            <p className="text-slate-300 text-sm font-medium">{item.value}</p>
+            <p className="text-slate-300 text-xs">{item.label}</p>
+            <p className="text-slate-100 text-sm font-medium">{item.value}</p>
           </div>
         ))}
       </div>
@@ -277,12 +277,12 @@ function ModelCard({ model, onClick, onEdit, onDelete }) {
       {/* Geographies */}
       <div className="flex flex-wrap gap-1.5 mb-4">
         {model.geographies.map(geo => (
-          <span key={geo} className="bg-slate-800 text-slate-400 text-xs px-2 py-0.5 rounded">
+          <span key={geo} className="bg-slate-800 text-slate-200 text-xs px-2 py-0.5 rounded">
             {geo}
           </span>
         ))}
         {model.showRestOfWorld && (
-          <span className="bg-slate-800 text-slate-500 text-xs px-2 py-0.5 rounded">+RoW</span>
+          <span className="bg-slate-800 text-slate-300 text-xs px-2 py-0.5 rounded">+RoW</span>
         )}
       </div>
 
@@ -291,7 +291,7 @@ function ModelCard({ model, onClick, onEdit, onDelete }) {
         onClick={onClick}
         className="w-full flex items-center justify-between pt-4 border-t border-slate-800"
       >
-        <span className="text-slate-500 text-xs">Created {model.createdAt}</span>
+        <span className="text-slate-300 text-xs">Created {model.createdAt}</span>
         <span className="text-violet-400 text-xs font-medium group-hover:text-violet-300 flex items-center gap-1">
           Open model
           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

@@ -134,10 +134,10 @@ export function ComboFilter({ combos, onChange }) {
                   );
                 })}
                 {!allOn && (
-                  <button onClick={() => setAll(dim, values)} className="px-2 py-0.5 text-xs text-slate-600 hover:text-slate-400 transition-colors">All</button>
+                  <button onClick={() => setAll(dim, values)} className="px-2 py-0.5 text-xs text-slate-400 hover:text-white transition-colors">All</button>
                 )}
                 {allOn && values.length > 1 && (
-                  <button onClick={() => setAll(dim, [])} className="px-2 py-0.5 text-xs text-slate-600 hover:text-slate-400 transition-colors">Clear</button>
+                  <button onClick={() => setAll(dim, [])} className="px-2 py-0.5 text-xs text-slate-400 hover:text-white transition-colors">Clear</button>
                 )}
               </div>
             </div>
@@ -709,7 +709,7 @@ export function DirectEntryPanel({
           />
           {uploadMsg && <span className={`text-xs ${uploadMsg.type==="success"?"text-emerald-400":"text-red-400"}`}>{uploadMsg.text}</span>}
           {saveError && <span className="text-xs text-red-400">{saveError}</span>}
-          <span className="text-xs">{dirty?<span className="text-amber-500">Unsaved</span>:savedAt?<span className="text-slate-600">Saved {savedAt}</span>:null}</span>
+          <span className="text-xs">{dirty?<span className="text-amber-500">Unsaved</span>:savedAt?<span className="text-slate-400">Saved {savedAt}</span>:null}</span>
           <button onClick={handleSave} disabled={saving||!dirty}
             className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
           >

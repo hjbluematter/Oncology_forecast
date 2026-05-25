@@ -260,7 +260,7 @@ function StepIndicator({ steps, current, isPatientFlow }) {
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
                 skipped
-                  ? "bg-slate-800/50 text-slate-700 ring-1 ring-dashed ring-slate-700"
+                  ? "bg-slate-800/50 text-slate-500 ring-1 ring-dashed ring-slate-600"
                   : s.id < current
                   ? "bg-violet-600 text-white"
                   : s.id === current
@@ -276,7 +276,7 @@ function StepIndicator({ steps, current, isPatientFlow }) {
                 s.id
               )}
             </div>
-            <span className={`text-xs hidden sm:block ${skipped ? "text-slate-700 line-through" : s.id === current ? "text-violet-300 font-medium" : s.id < current ? "text-slate-400" : "text-slate-600"}`}>
+            <span className={`text-xs hidden sm:block ${skipped ? "text-slate-500 line-through" : s.id === current ? "text-violet-300 font-medium" : s.id < current ? "text-slate-400" : "text-slate-400"}`}>
               {s.short}
             </span>
           </div>
@@ -327,8 +327,8 @@ function StepAsset({ form, update }) {
             </svg>
           </div>
           <div>
-            <p className="text-violet-200 text-sm font-medium">{form.assetName}</p>
-            <p className="text-violet-400 text-xs">{form.indication}</p>
+            <p className="text-violet-700 text-sm font-medium">{form.assetName}</p>
+            <p className="text-violet-600 text-xs">{form.indication}</p>
           </div>
         </div>
       )}
@@ -509,7 +509,7 @@ function StepEpiFunnel({ form, update }) {
                 <div className="flex items-center gap-2 pl-3 py-0.5 select-none">
                   <div className="w-px h-3 bg-slate-800 ml-2.5" />
                   {op && (
-                    <span className="text-slate-600 text-xs font-mono">
+                    <span className="text-slate-400 text-xs font-mono">
                       {op.symbol}{" "}
                       {factor.value !== null && factor.value !== ""
                         ? (op.pct ? `${factor.value}%` : Number(factor.value).toLocaleString())
@@ -598,7 +598,7 @@ function StepEpiFunnel({ form, update }) {
                 {/* Operator + value row (non-anchor steps) */}
                 {!factor.locked && (
                   <div className="border-t border-slate-800 px-4 py-2.5 flex flex-wrap items-center gap-3">
-                    <span className="text-slate-600 text-xs shrink-0">Apply as</span>
+                    <span className="text-slate-400 text-xs shrink-0">Apply as</span>
 
                     {/* Operator pills */}
                     <div className="flex items-center gap-1 flex-wrap">
@@ -619,7 +619,7 @@ function StepEpiFunnel({ form, update }) {
                       ))}
                     </div>
 
-                    {op && <span className="text-slate-700 text-xs hidden sm:block">{op.hint}</span>}
+                    {op && <span className="text-slate-400 text-xs hidden sm:block">{op.hint}</span>}
 
                     <div className="flex-1" />
 
@@ -642,7 +642,7 @@ function StepEpiFunnel({ form, update }) {
                           className="w-20 bg-slate-950 border border-slate-700 rounded-lg pl-2.5 pr-6 py-1 text-slate-200 text-xs text-right focus:outline-none focus:border-violet-500 transition-colors"
                         />
                         {op?.pct && (
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-600 text-xs pointer-events-none">%</span>
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">%</span>
                         )}
                       </div>
                     </div>
@@ -737,7 +737,7 @@ function StepGeographies({ form, update }) {
             onClick={toggleEU5}
             className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${
               eu5Selected
-                ? "bg-violet-600/20 border-violet-500/40 text-violet-300"
+                ? "bg-violet-600/20 border-violet-500/40 text-violet-700"
                 : "bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600"
             }`}
           >
@@ -775,14 +775,14 @@ function StepGeographies({ form, update }) {
                       onClick={() => toggleGeo(geo.id)}
                       className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${
                         form.geographies.includes(geo.id)
-                          ? "bg-violet-600/15 border-violet-500/40 text-violet-200"
+                          ? "bg-violet-600/15 border-violet-500/40 text-violet-700"
                           : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700"
                       }`}
                     >
                       <span>{geo.flag}</span>
                       <span className="truncate text-xs">{geo.label}</span>
                       {form.geographies.includes(geo.id) && (
-                        <svg className="w-3 h-3 ml-auto shrink-0 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <svg className="w-3 h-3 ml-auto shrink-0 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                         </svg>
                       )}
@@ -904,7 +904,7 @@ function StepTherapySegments({ form, update }) {
                   <span className="text-violet-300 text-xs font-medium">{lotLabels[i]}</span>
                 </div>
                 {i < form.linesOfTherapy - 1 && (
-                  <svg className="w-3 h-3 text-slate-600 rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <svg className="w-3 h-3 text-slate-400 rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
                   </svg>
                 )}
@@ -936,7 +936,7 @@ function StepTherapySegments({ form, update }) {
           <div className="space-y-2 mb-8">
             {Array.from({ length: form.segments }, (_, i) => (
               <div key={i} className="flex items-center gap-3">
-                <span className="text-slate-600 text-xs w-20 shrink-0">Segment {i + 1}</span>
+                <span className="text-slate-400 text-xs w-20 shrink-0">Segment {i + 1}</span>
                 <input
                   type="text"
                   value={form.segmentNames[i] ?? ""}
@@ -969,7 +969,7 @@ function StepTherapySegments({ form, update }) {
           <div className="space-y-2">
             {Array.from({ length: form.competitors }, (_, i) => (
               <div key={i} className="flex items-center gap-3">
-                <span className="text-slate-600 text-xs w-20 shrink-0">Competitor {i + 1}</span>
+                <span className="text-slate-400 text-xs w-20 shrink-0">Competitor {i + 1}</span>
                 <input
                   type="text"
                   value={form.competitorNames[i] ?? ""}
@@ -1174,7 +1174,7 @@ function StepRevenueAdjustments({ form, update }) {
                     onChange={e => update({ iraYear: parseInt(e.target.value) || 2026 })}
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:border-amber-500/50 transition-colors"
                   />
-                  <p className="text-slate-600 text-xs mt-1">Year IRA negotiated price takes effect</p>
+                  <p className="text-slate-400 text-xs mt-1">Year IRA negotiated price takes effect</p>
                 </div>
                 <div>
                   <p className="text-slate-400 text-xs uppercase tracking-wider mb-2">
@@ -1188,14 +1188,14 @@ function StepRevenueAdjustments({ form, update }) {
                     onChange={e => update({ iraDiscountRate: parseInt(e.target.value) })}
                     className="w-full accent-amber-500"
                   />
-                  <div className="flex justify-between text-slate-600 text-xs mt-1">
+                  <div className="flex justify-between text-slate-400 text-xs mt-1">
                     <span>1%</span><span>60%</span>
                   </div>
                 </div>
               </div>
 
               {/* Info banner */}
-              <div className="bg-amber-500/5 border border-amber-500/15 rounded-lg px-4 py-3 text-amber-600 text-xs">
+              <div className="bg-amber-500/5 border border-amber-500/15 rounded-lg px-4 py-3 text-amber-400 text-xs">
                 IRA impact applies to US revenue only. From {form.iraYear} onward, net price is reduced by {form.iraDiscountRate}% in the model. Historical CMS negotiated discounts have ranged from 38–79% for initial cohort drugs.
               </div>
             </div>
@@ -1239,7 +1239,7 @@ function StepRevenueAdjustments({ form, update }) {
                   onChange={e => update({ ptrsValue: parseInt(e.target.value) })}
                   className="w-full accent-violet-500"
                 />
-                <div className="flex justify-between text-slate-600 text-xs mt-1">
+                <div className="flex justify-between text-slate-400 text-xs mt-1">
                   <span>1% (very early)</span><span>99% (near-certain)</span>
                 </div>
               </div>

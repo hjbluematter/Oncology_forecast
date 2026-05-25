@@ -56,7 +56,7 @@ export default function PersistencyAssumptions({ model, visibleKeys }) {
           Median months on therapy · single value per combination · {combos.length} combination{combos.length!==1?"s":""}
         </p>
         <div className="flex items-center gap-3">
-          <span className="text-xs">{dirty?<span className="text-amber-500">Unsaved</span>:savedAt?<span className="text-slate-600">Saved {savedAt}</span>:null}</span>
+          <span className="text-xs">{dirty?<span className="text-amber-500">Unsaved</span>:savedAt?<span className="text-slate-400">Saved {savedAt}</span>:null}</span>
           <button onClick={handleSave} disabled={saving||!dirty}
             className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
           >
@@ -70,8 +70,8 @@ export default function PersistencyAssumptions({ model, visibleKeys }) {
         <table className="w-full border-collapse text-xs" style={{minWidth:360}}>
           <thead>
             <tr className="bg-slate-800/70 border-b border-slate-800">
-              <th className="bg-slate-800/70 border-r border-slate-700 px-3 py-2 text-left font-medium text-slate-500" style={{minWidth:220}}>Combination</th>
-              <th className="bg-slate-800/70 border-l border-slate-800 px-4 py-2 text-center font-medium text-slate-500" style={{minWidth:180}}>Median Months on Therapy</th>
+              <th className="bg-slate-800/70 border-r border-slate-700 px-3 py-2 text-left font-medium text-slate-300" style={{minWidth:220}}>Combination</th>
+              <th className="bg-slate-800/70 border-l border-slate-800 px-4 py-2 text-center font-medium text-slate-300" style={{minWidth:180}}>Median Months on Therapy</th>
             </tr>
           </thead>
           <tbody>
@@ -83,21 +83,21 @@ export default function PersistencyAssumptions({ model, visibleKeys }) {
                   <td className="border-r border-slate-700 px-3 py-2.5 bg-slate-900">
                     <div className="flex items-center gap-1.5">
                       {dep && (
-                        <svg className="w-3 h-3 text-slate-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <svg className="w-3 h-3 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
                         </svg>
                       )}
                       <div>
                         <p className={`text-xs font-medium ${dep ? "text-slate-500" : "text-slate-200"}`}>{c.label}</p>
-                        {dep && <p className="text-slate-600 text-xs">Shared with {dep.primaryLabel}</p>}
+                        {dep && <p className="text-slate-400 text-xs">Shared with {dep.primaryLabel}</p>}
                       </div>
                     </div>
                   </td>
                   <td className="px-3 py-1.5 border-l border-slate-800">
                     {dep ? (
                       <div className="flex items-center gap-1.5">
-                        <span className="w-32 px-2.5 py-1.5 text-slate-600 text-xs text-right tabular-nums">{displayValue || "—"}</span>
-                        <span className="text-slate-700 text-xs">months</span>
+                        <span className="w-32 px-2.5 py-1.5 text-slate-400 text-xs text-right tabular-nums">{displayValue || "—"}</span>
+                        <span className="text-slate-400 text-xs">months</span>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5">
@@ -108,7 +108,7 @@ export default function PersistencyAssumptions({ model, visibleKeys }) {
                           placeholder="e.g. 6.5"
                           className="w-32 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-violet-500 transition-colors text-right tabular-nums"
                         />
-                        <span className="text-slate-600 text-xs">months</span>
+                        <span className="text-slate-400 text-xs">months</span>
                       </div>
                     )}
                   </td>
