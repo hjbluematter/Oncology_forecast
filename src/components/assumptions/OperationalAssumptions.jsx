@@ -3,7 +3,7 @@ import { useForecast } from "../../store/forecastStore";
 import { buildAssetCombos, DirectEntryPanel, strip, getSharingForAssetAssumption } from "./shared";
 import { apiFetch } from "../../utils/apiFetch";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 // All metrics captured for the key product only (asset), across all LOT × segment × geography.
 // PTRS is a single value (probability), not a time series.

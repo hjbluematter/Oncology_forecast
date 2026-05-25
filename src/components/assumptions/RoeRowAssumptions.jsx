@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import { useForecast } from "../../store/forecastStore";
 import { apiFetch } from "../../utils/apiFetch";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 function buildPeriods(model) {
   const { startYear, timelineYears, granularity } = model;

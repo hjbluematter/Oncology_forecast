@@ -3,7 +3,7 @@ import { useForecast } from "../store/forecastStore";
 import { useAuth } from "../store/authStore";
 import PermissionsPanel from "./permissions/PermissionsPanel";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 import EpiAssumptions from "./assumptions/EpiAssumptions";
 import FunnelCutAssumptions from "./assumptions/FunnelCutAssumptions";
 import MarketShareAssumptions from "./assumptions/MarketShareAssumptions";

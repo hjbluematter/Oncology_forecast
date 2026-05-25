@@ -3,7 +3,7 @@ import { useForecast } from "../../store/forecastStore";
 import { buildCombos, strip, getSharingForAssumption } from "./shared";
 import { apiFetch } from "../../utils/apiFetch";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 export default function PersistencyAssumptions({ model, visibleKeys, readOnly = false }) {
   const { updateModel } = useForecast();

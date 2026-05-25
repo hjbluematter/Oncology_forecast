@@ -4,7 +4,7 @@ import {
 } from "recharts";
 import { runForecast } from "../utils/forecastEngine";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 const LOT_COLORS = ["#7c3aed", "#2563eb", "#0d9488", "#d97706", "#dc2626", "#7c3aed"];
 

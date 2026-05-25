@@ -3,7 +3,7 @@ import { useForecast } from "../../store/forecastStore";
 import { buildCombos } from "./shared";
 import { apiFetch } from "../../utils/apiFetch";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 function buildCols(model) {
   const cols = [{ id: "epi", label: "Epi" }];

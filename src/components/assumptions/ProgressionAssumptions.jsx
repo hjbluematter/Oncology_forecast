@@ -2,7 +2,7 @@ import { useForecast } from "../../store/forecastStore";
 import { buildAssetCombos, DirectEntryPanel, getSharingForAssetAssumption } from "./shared";
 import { apiFetch } from "../../utils/apiFetch";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 const LOT_LABELS = ["1L", "2L", "3L", "4L", "5L", "6L+"];
 

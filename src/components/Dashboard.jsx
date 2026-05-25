@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useForecast } from "../store/forecastStore";
 import { useAuth } from "../store/authStore";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 const STATUS_COLORS = {
   Active: "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30",

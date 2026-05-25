@@ -22,7 +22,7 @@ import PersistencyAssumptions from "./assumptions/PersistencyAssumptions";
 import ProgressionAssumptions from "./assumptions/ProgressionAssumptions";
 import OperationalAssumptions from "./assumptions/OperationalAssumptions";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

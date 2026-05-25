@@ -9,7 +9,7 @@ import {
   aggregateByDimension, findPeak, sumAcrossPeriods,
 } from "../../utils/portfolioEngine";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 const SERIES_COLORS = [
   "#7c3aed","#2563eb","#059669","#d97706","#dc2626",
