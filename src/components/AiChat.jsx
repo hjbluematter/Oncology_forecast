@@ -836,7 +836,8 @@ function ScenarioCard({ parsed, model, onSaveScenario, onScenarioSaved }) {
           // Build a human-readable label for the assumption type + sub-field
           const TYPE_LABELS = {
             epi: "Epi", funnelCut: "Funnel Cut", marketShare: "Market Share",
-            persistency: "Persistency", operationalAssumption: "Operational",
+            persistency: "Persistency", progression: "Progression",
+            progressionAssumption: "Progression", operationalAssumption: "Operational",
           };
           const FIELD_LABELS = {
             grossPrice: "Gross Price", gtn: "GTN", compliance: "Compliance",

@@ -283,23 +283,49 @@ ${comboMap}
 Available funnel cuts:
 ${funnelCuts || "  (none configured)"}
 
-Available assumption types and when to use them:
-  "epi"                  — patient count / epidemiology (incidence, prevalence, patient pool)
-  "funnelCut"            — funnel cut rates (testing rate, positivity rate, diagnosis rate, etc.)
-                           → also set funnelCutId to the matching funnel cut id/label above
-  "marketShare"          — market share % per product
-  "persistency"          — duration of therapy (median months on treatment)
-  "operationalAssumption"— operational/commercial metrics (price, GTN, compliance, etc.)
-                           → also set fieldName to one of:
-                             "grossPrice"   (WAC/list/launch price per vial)
-                             "gtn"          (gross-to-net discount %, e.g. 25 means 25% discount)
-                             "compliance"   (% of patients compliant)
-                             "access"       (% of eligible patients with access)
-                             "abandonment"  (% who discontinue early)
-                             "vials"        (average vials dispensed per patient-month)
+Available assumption types — choose the MOST SPECIFIC match:
 
-IMPORTANT: never use "epi" for price, GTN, compliance, access, abandonment or vials — use "operationalAssumption" with the correct fieldName.
-IMPORTANT: never use "epi" for funnel-cut rates (testing rate, positivity, etc.) — use "funnelCut".
+  "epi"
+      Patient pool / epidemiology counts only.
+      Use when: "incidence", "prevalence", "number of patients", "patient pool"
+      NEVER use for rates, prices, or commercial metrics.
+
+  "funnelCut"
+      Percentage rates in the funnel (testing, positivity, diagnosis, eligibility).
+      Use when: "testing rate", "positivity rate", "diagnosis rate", "biomarker rate",
+                "treatment eligibility", any cut listed in the funnel above.
+      → also set funnelCutId to the matching funnel cut id or label listed above.
+
+  "marketShare"
+      Market share % per product/brand.
+      Use when: "market share", "share", "uptake", "penetration"
+
+  "persistency"
+      Median months on therapy / duration of treatment.
+      Use when: "persistency", "duration of therapy", "DoT", "months on treatment",
+                "time on drug", "therapy duration"
+
+  "progression"
+      % of patients flowing from one line of therapy to the next (Patient Flow models only).
+      Use when: "progression rate", "1L to 2L", "line progression", "flow rate between lines",
+                "patients progressing", "transition rate"
+
+  "operationalAssumption"
+      Commercial / operational metrics for the key product.
+      Use when any of these are mentioned — set fieldName accordingly:
+        "grossPrice"  → "price", "WAC", "launch price", "list price", "gross price per vial"
+        "gtn"         → "GTN", "gross-to-net", "net price adjustment", "rebate", "discount"
+        "compliance"  → "compliance", "adherence", "treatment compliance"
+        "access"      → "access", "access rate", "payer access", "formulary access"
+        "abandonment" → "abandonment", "discontinuation", "drop-off", "early stop"
+        "vials"       → "vials", "vials per patient-month", "dose intensity", "units dispensed"
+
+CRITICAL RULES — never break these:
+  • "testing rate", "positivity rate", "diagnosis rate" → "funnelCut" (NOT "epi")
+  • "price", "GTN", "WAC", "compliance", "access", "abandonment", "vials" → "operationalAssumption" (NOT "epi")
+  • "progression", "flow from 1L to 2L" → "progression" (NOT "epi")
+  • "market share", "share", "uptake" → "marketShare" (NOT "epi")
+  • Only use "epi" for absolute patient counts / incidence / prevalence numbers.
 
 User request: "${message}"
 

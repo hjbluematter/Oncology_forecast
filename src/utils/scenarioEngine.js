@@ -210,6 +210,24 @@ export function applyScenarioDelta(model, parsed, applyMode = "relative") {
       snap.persistencyAssumptions = { ...model.persistencyAssumptions, combos: modified };
     }
 
+    if (assumptionType === "progression" || assumptionType === "progressionAssumption") {
+      // Progression uses 3-part asset keys (g-l-s) — same as operational
+      const assetTargetKeys = comboKeys === "all"
+        ? getAllAssetComboKeys(model)
+        : (Array.isArray(comboKeys) ? comboKeys : [comboKeys]);
+
+      const base = model.progressionAssumptions?.combos ?? {};
+      const modified = JSON.parse(JSON.stringify(base));
+      for (const ck of assetTargetKeys) {
+        if (!modified[ck]) continue;
+        const inputDict    = unwrapPeriodDict(modified[ck].input    ?? {});
+        const computedDict = unwrapPeriodDict(modified[ck].computed ?? {});
+        modified[ck].input    = applyToPeriodDict(inputDict);
+        modified[ck].computed = applyToPeriodDict(computedDict);
+      }
+      snap.progressionAssumptions = { ...model.progressionAssumptions, combos: modified };
+    }
+
     if (assumptionType === "operationalAssumption") {
       // Resolve field name — accept raw Gemini output or common aliases
       const rawField = change.fieldName ?? "";
