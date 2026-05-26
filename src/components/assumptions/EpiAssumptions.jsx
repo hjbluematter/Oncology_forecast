@@ -64,6 +64,7 @@ export default function EpiAssumptions({ model, visibleKeys, proposal, onProposa
         )}
       </div>
       <DirectEntryPanel
+        key={proposal ? "with-proposal" : "saved"}
         model={model}
         combos={combos}
         savedValues={savedValuesWithProposal}

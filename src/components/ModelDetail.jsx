@@ -386,6 +386,11 @@ function AssumptionsTab({ model, readOnly, epiProposal, onEpiProposalConsumed, f
 function AssumptionSection({ title, subtitle, icon, locked, defaultOpen, children }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
 
+  // Auto-open when a proposal arrives (user may already be on this tab)
+  useEffect(() => {
+    if (defaultOpen) setOpen(true);
+  }, [defaultOpen]);
+
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
       <button
